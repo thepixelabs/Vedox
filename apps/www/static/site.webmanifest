@@ -1,0 +1,12 @@
+{
+  "name": "Vedox",
+  "short_name": "Vedox",
+  "description": "Local-first documentation CMS for developers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0b0e",
+  "theme_color": "#818cf8",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

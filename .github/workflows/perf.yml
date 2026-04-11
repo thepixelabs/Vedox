@@ -1,0 +1,62 @@
+name: Performance budgets
+
+on:
+  pull_request:
+    paths:
+      - 'apps/editor/**'
+      - 'apps/cli/**'
+      - 'tests/perf/**'
+      - '.github/workflows/perf.yml'
+  workflow_dispatch:
+
+jobs:
+  perf:
+    name: Check perf budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          VEDOX_SKIP_FONTS: 1
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: 'apps/cli/go.sum'
+
+      - name: Build CLI
+        run: go build ./apps/cli/...
+
+      - name: Start dev server
+        run: |
+          # Build a minimal test project
+          pnpm exec tsx tests/perf/build-reference-workspace.ts
+          # Start the SvelteKit dev server in background
+          cd apps/editor && pnpm dev &
+          # Wait for it to be ready
+          pnpm exec wait-on http://localhost:5151 --timeout 60000
+        env:
+          VEDOX_SKIP_FONTS: 1
+
+      - name: Run perf budgets
+        run: pnpm exec tsx tests/perf/run-budgets.ts
+        env:
+          PERF_BASE_URL: http://localhost:5151
+
+      - name: Upload perf results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: tests/perf/results/
+          if-no-files-found: ignore

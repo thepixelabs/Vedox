@@ -1,0 +1,62 @@
+/* mermaid.css — theme-aware overrides for Mermaid-generated SVGs
+ *
+ * Mermaid SVGs are injected into the DOM with inline styles. We override
+ * via higher-specificity CSS on the .mermaid container.
+ */
+
+.mermaid {
+  background: transparent;
+}
+
+/* Remove default white/dark background Mermaid bakes into the SVG */
+.mermaid svg {
+  background: transparent !important;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Make diagram text use the active text token */
+.mermaid .label,
+.mermaid text {
+  fill: var(--text-2) !important;
+  font-family: var(--font-body) !important;
+  font-size: var(--text-xs) !important;
+}
+
+/* Node borders follow surface token */
+.mermaid .node rect,
+.mermaid .node circle,
+.mermaid .node ellipse,
+.mermaid .node polygon,
+.mermaid .node path {
+  stroke: var(--border-default) !important;
+}
+
+/* Edge lines */
+.mermaid .edgePath path {
+  stroke: var(--text-3) !important;
+}
+
+/* Arrowheads */
+.mermaid .arrowheadPath {
+  fill: var(--text-3) !important;
+  stroke: none !important;
+}
+
+/* Cluster/subgraph borders */
+.mermaid .cluster rect {
+  fill: var(--surface-3) !important;
+  stroke: var(--border-hairline) !important;
+}
+
+/* Sequence diagram lifeline */
+.mermaid .actor {
+  fill: var(--surface-3) !important;
+  stroke: var(--border-default) !important;
+}
+
+/* Active node fill */
+.mermaid .node .label-container,
+.mermaid .node rect {
+  fill: var(--surface-4) !important;
+}

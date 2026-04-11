@@ -1,0 +1,7 @@
+{
+  "coldLoadP95": 250,
+  "cmdKFirstResultP95": 50,
+  "fileOpenP95": 50,
+  "modeToggleP95": 100,
+  "fileSwitchP95": 30
+}

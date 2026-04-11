@@ -1,0 +1,238 @@
+/*
+ * typography.css — Vedox typographic stack
+ *
+ * Three typefaces, all OFL-licensed and self-hosted via fontsource:
+ *   - Body / UI: Geist Variable (OFL)      — @fontsource-variable/geist
+ *   - Display:   Fraunces Variable (OFL)   — @fontsource-variable/fraunces
+ *   - Monospace: Commit Mono (OFL)         — @fontsource/commit-mono
+ *
+ * Fraunces replaces the original GT Sectra recommendation (commercial) and
+ * ships a true `opsz` axis so we get proper optical sizing at display sizes
+ * without paying licence fees.
+ *
+ * Commit Mono replaces the original Berkeley Mono recommendation (commercial);
+ * it is a modern, slab-flavoured free monospace drawn for editorial use.
+ *
+ * Fontsource packages bundle the woff2 files and emit @font-face CSS with
+ * correct unicode-range subsets, font-display: swap, and relative URLs
+ * that resolve under Vite's asset pipeline. Importing the CSS is all we
+ * need — no external CDN requests, so no `font-src` CSP exceptions.
+ *
+ * Fallback strategy: the stack declared in tokens.css falls through to
+ * high-quality system fonts of the same genre if the primary woff2 fails
+ * to load.
+ */
+
+/* ------------------------------------------------------------------ *
+ *  Body / UI — Geist Variable (weight axis)                          *
+ * ------------------------------------------------------------------ */
+@import "@fontsource-variable/geist/index.css";
+
+/* ------------------------------------------------------------------ *
+ *  Display — Fraunces Variable (opsz + wght axes)                    *
+ *  We load the opsz axis: Fraunces takes a size hint and switches    *
+ *  the drawing between Text and Display cuts automatically.          *
+ * ------------------------------------------------------------------ */
+@import "@fontsource-variable/fraunces/opsz.css";
+@import "@fontsource-variable/fraunces/opsz-italic.css";
+
+/* ------------------------------------------------------------------ *
+ *  Monospace — Commit Mono (static weights 400 and 500)              *
+ *  Regular weight for code bodies, 500 for emphasis, italic for      *
+ *  comments when needed. Ligatures stay off for code (see below).    *
+ * ------------------------------------------------------------------ */
+@import "@fontsource/commit-mono/400.css";
+@import "@fontsource/commit-mono/400-italic.css";
+@import "@fontsource/commit-mono/500.css";
+
+/* ------------------------------------------------------------------ *
+ *  Monospace upgrade — JetBrains Mono Variable                        *
+ *  Narrower, lower x-height, sits naturally beside Geist.            *
+ *  Leading the --font-mono stack (Commit Mono as fallback).           *
+ * ------------------------------------------------------------------ */
+@import "@fontsource-variable/jetbrains-mono/index.css";
+
+/* ──────────────────────────────────────────────────────────────────
+   Feature defaults
+   ──────────────────────────────────────────────────────────────────
+
+   Every body surface gets:
+     - kern on
+     - liga on (standard ligatures)
+     - ss01 off in body (double-story a)
+
+   Display surfaces (h1–h3) turn ss01 on for the single-story a,
+   plus dlig where appropriate.
+
+   Numeric surfaces get tabular slashed zero for scannable numbers.
+*/
+
+html {
+  font-family: var(--font-body);
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  font-weight: 400;
+}
+
+/* Display family on headings: the single editorial gravity surface. */
+.prose h1,
+.prose-h1,
+h1.display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 72, "wght" 700;
+  font-size: var(--text-4xl);
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-tighter);
+  font-feature-settings: "kern" 1, "liga" 1, "dlig" 1, "ss01" 0;
+  hanging-punctuation: first last;
+}
+
+h1:not(.display):not(.prose h1) {
+  font-family: var(--font-body);
+  font-size: var(--text-4xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.015em;
+  font-feature-settings: "kern" 1, "liga" 1, "ss01" 1;
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 36, "wght" 600;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-tight);
+  font-feature-settings: "kern" 1, "liga" 1, "ss01" 0;
+}
+
+h3 {
+  font-family: var(--font-body);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: var(--leading-snug);
+  letter-spacing: -0.008em;
+  font-feature-settings: "kern" 1, "liga" 1, "ss01" 1;
+}
+
+h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: var(--leading-snug);
+  letter-spacing: -0.005em;
+}
+
+/*
+ * Lead paragraph — the intake ramp between a prose h1 and body copy.
+ * Scoped to .prose so it does not affect app chrome.
+ */
+.prose > h1 + p {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  line-height: var(--leading-normal);
+  color: var(--text-2);
+  letter-spacing: -0.003em;
+  margin-block: var(--space-5) var(--space-6);
+}
+
+/* Code surfaces */
+code,
+kbd,
+pre,
+samp,
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "kern" 1, "tnum" 1, "zero" 1, "liga" 0, "calt" 0;
+  font-variant-ligatures: none;
+}
+
+pre,
+.code-block {
+  font-size: var(--text-sm);
+  line-height: 1.65;
+}
+
+/*
+ * Tabular figures with slashed zero — applied to surfaces where
+ * numbers are compared visually. This is Wow #4 from design-system.md.
+ */
+.tabular,
+.has-tabular-figures,
+time,
+.meta-strip,
+.stat,
+.version-chip,
+.file-size,
+.line-numbers,
+table td,
+table th {
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: "tnum" 1, "zero" 1, "ss01" 1;
+}
+
+/*
+ * Reading measure helper — components set a reading column using
+ * max-inline-size to stay within a readable line length.
+ */
+.measure         { max-inline-size: var(--measure-default); }
+.measure-narrow  { max-inline-size: var(--measure-narrow); }
+.measure-wide    { max-inline-size: var(--measure-wide); }
+
+/*
+ * Reduced motion — supersedes any localized transitions. The full
+ * reduced-motion block lives in motion.css.
+ */
+
+/*
+ * Wizard entrance animation — staggered field reveal for /projects/new.
+ * Only plays when the user hasn't requested reduced motion.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes wizard-field-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+}
+
+/*
+ * Responsive typography adjustments.
+ */
+@media (max-width: 767px) {
+  /* On mobile, prose measure fills the column */
+  .measure,
+  .measure-narrow {
+    max-inline-size: 100%;
+  }
+
+  /* Lead paragraph stays body size on mobile to save vertical space */
+  .prose > h1 + p {
+    font-size: var(--text-base);
+    line-height: var(--leading-relaxed);
+  }
+
+  body {
+    line-height: 1.55;
+  }
+}

@@ -1,0 +1,19 @@
+# vedox.config.toml — Vedox workspace configuration
+#
+# Copy this file to vedox.config.toml in your workspace root.
+# All values are optional and will fall back to the defaults shown here.
+
+# Port for the local dev server.
+# The server always binds to 127.0.0.1 (loopback only).
+# Default: 5150 (Van Halen — memorable, uncommon, avoids collisions with 3000/8080)
+# The SvelteKit Vite dev server runs on port+1 (5151) and proxies /api to this port.
+port = 5150
+
+# Path to the documentation root directory, relative to this config file.
+# Default: "." (same directory as this config file)
+workspace = "."
+
+# Environment profile. Controls CSP strictness, source maps, and minification.
+# Valid values: "dev", "prod"
+# Default: "dev"
+profile = "dev"

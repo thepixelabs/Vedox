@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0b0e"/>
+      <stop offset="1" stop-color="#14141a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0" r="0.8">
+      <stop offset="0" stop-color="#818cf8" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#818cf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <g transform="translate(80, 120)">
+    <path d="M0 0 L40 80 L80 0" fill="none" stroke="#818cf8" stroke-width="10" stroke-linejoin="round" stroke-linecap="round"/>
+    <text x="110" y="60" font-family="Inter, -apple-system, sans-serif" font-size="52" font-weight="700" fill="#f0f0f5">Vedox</text>
+  </g>
+  <text x="80" y="320" font-family="Inter, -apple-system, sans-serif" font-size="68" font-weight="700" fill="#f0f0f5">
+    <tspan x="80" dy="0">Documentation that lives</tspan>
+    <tspan x="80" dy="80">in your repo.</tspan>
+  </text>
+  <text x="80" y="520" font-family="Inter, -apple-system, sans-serif" font-size="32" fill="#b0b0c0">A local-first docs CMS for developers.</text>
+  <text x="80" y="570" font-family="JetBrains Mono, ui-monospace, monospace" font-size="28" fill="#818cf8">$ npm install -g vedox</text>
+</svg>

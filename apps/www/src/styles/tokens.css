@@ -1,0 +1,144 @@
+/*
+ * tokens.css — Vedox marketing site tokens.
+ * Mirrored from apps/editor/src/styles/tokens.css so the site visually
+ * rhymes with the app. Marketing-only additions are namespaced with --mkt-.
+ */
+
+:root {
+	--color-surface-base: #ffffff;
+	--color-surface-elevated: #f5f5f7;
+	--color-surface-overlay: #ebebed;
+
+	--color-text-primary: #1a1a1f;
+	--color-text-secondary: #4a4a56;
+	--color-text-muted: #8a8a98;
+	--color-text-inverse: #ffffff;
+
+	--color-accent: #5b6af5;
+	--color-accent-hover: #4754e8;
+	--color-accent-subtle: #eef0fe;
+
+	--color-border: #e2e2e8;
+	--color-border-strong: #c4c4ce;
+
+	--color-success: #22874a;
+	--color-warning: #c47200;
+	--color-error: #c8282d;
+	--color-info: #0f6cbd;
+
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 20px;
+	--space-6: 24px;
+	--space-7: 28px;
+	--space-8: 32px;
+	--space-10: 40px;
+	--space-12: 48px;
+	--space-16: 64px;
+	--space-20: 80px;
+	--space-24: 96px;
+
+	--font-sans:
+		-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+	--font-mono:
+		'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'SF Mono',
+		monospace;
+
+	--font-size-xs: 12px;
+	--font-size-sm: 13px;
+	--font-size-base: 15px;
+	--font-size-lg: 17px;
+	--font-size-xl: 20px;
+	--font-size-2xl: 24px;
+	--font-size-3xl: 32px;
+
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 10px;
+	--radius-xl: 16px;
+
+	--shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+	--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+	--shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+
+	/* Marketing additions */
+	--mkt-max-width: 1120px;
+	--mkt-gutter: clamp(16px, 4vw, 32px);
+	--mkt-display:
+		clamp(36px, 6vw, 72px); /* hero headline */
+	--mkt-display-line: 1.08;
+	--mkt-section-pad: clamp(48px, 7vw, 80px);
+	--mkt-hero-gradient:
+		radial-gradient(
+			1200px 600px at 50% -10%,
+			rgba(91, 106, 245, 0.18),
+			transparent 60%
+		);
+	--mkt-glow-accent: radial-gradient(
+		800px 400px at 50% 0%,
+		rgba(91, 106, 245, 0.06),
+		transparent 70%
+	);
+	--mkt-glow-warm: radial-gradient(
+		800px 400px at 50% 100%,
+		rgba(251, 191, 36, 0.04),
+		transparent 70%
+	);
+	--mkt-glow-success: radial-gradient(
+		600px 300px at 30% 50%,
+		rgba(34, 135, 74, 0.05),
+		transparent 70%
+	);
+}
+
+[data-theme='dark'] {
+	--color-surface-base: #0f1017;
+	--color-surface-elevated: #161722;
+	--color-surface-overlay: #1e1f2e;
+
+	--color-text-primary: #eeeef5;
+	--color-text-secondary: #a8a8be;
+	--color-text-muted: #5e5e72;
+	--color-text-inverse: #0f1017;
+
+	--color-accent: #818cf8;
+	--color-accent-hover: #a5b0fb;
+	--color-accent-subtle: #1c1e42;
+
+	--color-border: #24253a;
+	--color-border-strong: #363850;
+
+	--color-success: #4ade80;
+	--color-warning: #fbbf24;
+	--color-error: #f87171;
+	--color-info: #60a5fa;
+
+	--shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+	--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+	--shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6), 0 4px 10px rgba(0, 0, 0, 0.4);
+
+	--mkt-hero-gradient:
+		radial-gradient(
+			1400px 700px at 50% -5%,
+			rgba(129, 140, 248, 0.3),
+			rgba(99, 60, 200, 0.08) 50%,
+			transparent 70%
+		);
+	--mkt-glow-accent: radial-gradient(
+		800px 400px at 50% 0%,
+		rgba(129, 140, 248, 0.1),
+		transparent 70%
+	);
+	--mkt-glow-warm: radial-gradient(
+		800px 400px at 50% 100%,
+		rgba(251, 191, 36, 0.06),
+		transparent 70%
+	);
+	--mkt-glow-success: radial-gradient(
+		600px 300px at 30% 50%,
+		rgba(74, 222, 128, 0.06),
+		transparent 70%
+	);
+}

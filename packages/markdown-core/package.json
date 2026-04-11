@@ -1,0 +1,11 @@
+{
+  "name": "@vedox/markdown-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Placeholder for the Vedox shared Markdown parser (Phase 2 WASM spike).",
+  "scripts": {
+    "build": "echo 'markdown-core: WASM build not yet implemented (Phase 2)'",
+    "test": "echo 'markdown-core: no tests yet'",
+    "lint": "echo 'markdown-core: no lint yet'"
+  }
+}

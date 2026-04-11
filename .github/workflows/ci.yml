@@ -1,0 +1,135 @@
+name: CI
+
+# Runs on every push to any branch and on pull requests targeting main.
+# Platforms: ubuntu-latest + macos-latest ONLY.
+# Windows: best-effort via WSL2 (documented known-issues). Not in required CI.
+# CTO ruling 2026-04-07: windows-latest removed from required CI gates.
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ── Node / SvelteKit pipeline ──────────────────────────────────────────────
+  node:
+    name: "Node (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm turbo run build
+
+      - name: Test
+        run: pnpm turbo run test
+
+      - name: Lint
+        run: pnpm turbo run lint
+
+      # SBOM for Node artifacts — satisfies CTO audit condition 9.
+      # Runs after build so the dist/ artifacts exist.
+      - name: Generate Node SBOM
+        uses: anchore/sbom-action@v0
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom-node.spdx.json
+          artifact-name: sbom-node-${{ github.sha }}.spdx.json
+
+      - name: Upload Node SBOM
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: sbom-node-${{ github.sha }}
+          path: sbom-node.spdx.json
+          retention-days: 90
+
+  # ── Go / CLI pipeline ──────────────────────────────────────────────────────
+  go:
+    name: "Go (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: apps/cli/go.sum
+
+      - name: Verify go.work
+        run: go work sync
+        working-directory: .
+
+      - name: Verify go.sum is tidy
+        # Runs `go mod tidy` and fails if it produces any diff.
+        # Ensures go.sum is always committed and up-to-date.
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+        working-directory: apps/cli
+
+      - name: Build
+        run: go build ./...
+        working-directory: apps/cli
+
+      - name: Test
+        run: go test ./...
+        working-directory: apps/cli
+
+      - name: Vet
+        run: go vet ./...
+        working-directory: apps/cli
+
+      # SBOM for Go artifacts using cyclonedx-gomod.
+      # Only run on ubuntu for artifact de-duplication; the binary is
+      # cross-compiled so one SBOM covers the dependency graph.
+      - name: Install cyclonedx-gomod
+        if: matrix.os == 'ubuntu-latest'
+        run: go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+
+      - name: Generate Go SBOM
+        if: matrix.os == 'ubuntu-latest'
+        run: cyclonedx-gomod app -json -output sbom-go.cdx.json .
+        working-directory: apps/cli
+
+      - name: Upload Go SBOM
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: sbom-go-${{ github.sha }}
+          path: apps/cli/sbom-go.cdx.json
+          retention-days: 90

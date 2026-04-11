@@ -1,0 +1,155 @@
+@import './styles/tokens.css';
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+html {
+	font-family: var(--font-sans);
+	font-size: var(--font-size-base);
+	line-height: 1.6;
+	color: var(--color-text-primary);
+	background-color: var(--color-surface-base);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+	}
+}
+
+body {
+	min-height: 100vh;
+	overflow-x: hidden;
+	background:
+		var(--mkt-hero-gradient),
+		var(--color-surface-base);
+	background-repeat: no-repeat;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	line-height: 1.15;
+	letter-spacing: -0.015em;
+	color: var(--color-text-primary);
+	font-weight: 650;
+}
+
+p {
+	color: var(--color-text-secondary);
+}
+
+code,
+kbd,
+pre,
+samp {
+	font-family: var(--font-mono);
+	font-size: 0.95em;
+}
+
+a {
+	color: var(--color-accent);
+	text-decoration: none;
+}
+
+a:hover {
+	color: var(--color-accent-hover);
+	text-decoration: underline;
+}
+
+:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 3px;
+	border-radius: var(--radius-sm);
+}
+
+:focus:not(:focus-visible) {
+	outline: none;
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border-width: 0;
+}
+
+.container {
+	width: 100%;
+	max-width: var(--mkt-max-width);
+	margin: 0 auto;
+	padding-left: var(--mkt-gutter);
+	padding-right: var(--mkt-gutter);
+}
+
+section {
+	padding-top: var(--mkt-section-pad);
+	padding-bottom: var(--mkt-section-pad);
+	scroll-margin-top: 80px;
+}
+
+section + section {
+	padding-top: 0;
+}
+
+/* Accent divider before key sections */
+section#features,
+section#compare,
+section#faq {
+	border-top: 1px solid var(--color-border);
+	margin-top: var(--space-8);
+	padding-top: var(--mkt-section-pad);
+}
+
+/* Tonal zones — cool / warm / green */
+section#features {
+	background:
+		radial-gradient(
+			1000px 500px at 70% 0%,
+			color-mix(in srgb, var(--color-accent) 5%, transparent),
+			transparent 60%
+		),
+		radial-gradient(
+			600px 400px at 20% 100%,
+			color-mix(in srgb, var(--color-accent) 3%, transparent),
+			transparent 60%
+		);
+}
+
+section#compare {
+	background: var(--mkt-glow-warm);
+}
+
+section#roadmap {
+	background: var(--mkt-glow-success);
+}
+
+section#waitlist {
+	background:
+		radial-gradient(
+			1000px 500px at 50% 80%,
+			color-mix(in srgb, var(--color-accent) 6%, transparent),
+			transparent 70%
+		);
+}

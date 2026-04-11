@@ -1,0 +1,305 @@
+/*
+ * tokens.css — Vedox design token system (flagship rebuild, 2026-04-09)
+ *
+ * Authored in OKLCH. Organised in layers:
+ *   1. Raw accent ramp (per-theme, defined in themes.css)
+ *   2. Semantic tokens (this file — the public surface components consume)
+ *   3. Typography / motion / radii / spacing primitives (this file)
+ *   4. Code syntax tokens derived from the active accent (this file)
+ *
+ * Theme override strategy:
+ *   - Default theme (graphite) ships in :root
+ *   - [data-theme="eclipse" | "ember" | "paper" | "solar"] override accent + surface + text
+ *   - [data-density="compact" | "cozy"] overrides --density multiplier
+ *   - User picks explicitly — we never honour prefers-color-scheme automatically
+ *
+ * Reference: .tasks/vedox-flagship-ux/design-system.md §§ 1–4
+ *            .tasks/vedox-flagship-ux/research/cmp-dark-mode.md
+ *            .tasks/vedox-flagship-ux/research/cmp-typography.md
+ *
+ * Backwards compatibility:
+ *   Phase 1 legacy aliases (--color-surface-base, --color-text-primary, --color-accent, etc.)
+ *   remain declared at the bottom so existing component styles keep working during the
+ *   flagship migration. Remove them in a follow-up once every call-site has been updated.
+ */
+
+/* ──────────────────────────────────────────────────────────────────────────
+   1. Base primitives (theme-independent)
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ---- Spacing — 4 px base scale, 13 steps ------------------------------- *
+   * The flagship design-system.md §3.1 bumps --space-7 to 32px and
+   * --space-8 to 40px, but Phase 1 keeps the legacy 28 / 32 / 64 steps
+   * to avoid layout shifts across 20+ existing components. Phase 2 will
+   * migrate call-sites to --space-7 (32) / --space-8 (40) to match the
+   * flagship scale in lock-step.
+   */
+  --space-0: 0;
+  --space-px: 1px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;   /* Phase 1 legacy; flagship target = 32px */
+  --space-8: 32px;   /* Phase 1 legacy; flagship target = 40px */
+  --space-9: 48px;
+  --space-10: 64px;
+  --space-11: 96px;
+  --space-12: 128px;
+
+  /* ---- Density multiplier — multiplies scaled tokens downstream ---------- */
+  /* Default = comfortable (1.0). [data-density="compact"] = 0.875,          */
+  /* [data-density="cozy"] = 1.125. Values are scoped below.                 */
+  --density: 1;
+
+  /* ---- Typography: families ---------------------------------------------- *
+   * Font-face declarations live in typography.css (imported after tokens).
+   * These custom properties name the stacks that components reference.
+   */
+  --font-display:
+    "Fraunces Variable", "Fraunces",
+    "Source Serif 4", "Iowan Old Style", "Apple Garamond",
+    Georgia, "Times New Roman", serif;
+
+  --font-body:
+    "Geist Variable", "Geist",
+    -apple-system, "SF Pro Text", "Helvetica Neue", "Segoe UI",
+    Roboto, system-ui, sans-serif;
+
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono",
+    "Commit Mono", "Monaspace Neon",
+    "SF Mono", "Menlo", Consolas, monospace;
+
+  /* Legacy alias: many components still reference --font-sans.            */
+  /* TODO(vedox-flagship-ux): migrate call-sites to --font-body.           */
+  --font-sans: var(--font-body);
+
+  /* ---- Typography: scale (minor-third, 1.200) ---------------------------- */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 16px;   /* default body — see cmp-typography §5.3 */
+  /* ---- Typography: fluid display scale (clamp 375px → 1280px viewport) ----- *
+   * Fixed UI text (2xs through base) stays at stable px — density-safe.        *
+   * Prose/display steps use clamp() for seamless viewport-responsive scaling.   *
+   * Calculation: preferred = min + (max-min)/(1280-375) * 100vw + offset       *
+   */
+  --text-lg:  clamp(16px, calc(16px + 0.220vw), 18px);
+  --text-xl:  clamp(18px, calc(18px + 0.441vw), 22px);
+  --text-2xl: clamp(22px, calc(22px + 0.662vw), 28px);
+  --text-3xl: clamp(26px, calc(26px + 0.882vw), 34px);
+  --text-4xl: clamp(32px, calc(32px + 1.324vw), 44px);
+  --text-5xl: clamp(44px, calc(44px + 3.094vw), 72px);
+
+  /* ---- Typography: semantic UI aliases -------------------------------------- */
+  --text-label:   12px;   /* form labels, section headers */
+  --text-caption: 11px;   /* timestamps, metadata, captions */
+  --text-ui:      13px;   /* buttons, nav items, dropdowns */
+
+  /* ---- Typography: line-heights (additions) --------------------------------- */
+  --leading-display: 1.05;   /* h1 display at 44px+ — tight, editorial */
+  --leading-heading: 1.20;   /* h2/h3 subheadings */
+
+  /* ---- Typography: letter-spacing scale ------------------------------------- */
+  --tracking-tighter: -0.025em;  /* display, large type 44px+ */
+  --tracking-tight:   -0.015em;  /* h2/h3 UI headings */
+  --tracking-normal:   0em;
+  --tracking-wide:     0.04em;   /* section labels (uppercase) */
+  --tracking-wider:    0.06em;   /* small caps, badges */
+  --tracking-widest:   0.10em;   /* decorative labels */
+
+  /* Legacy font-size aliases (Phase 1 values) — many components reference *
+   * these and shifting them globally would cause visible layout changes.  *
+   * Phase 2 will migrate consumers to the new --text-* scale in lockstep  *
+   * with component updates, so the numbers here stay at their 2026-04-01  *
+   * baseline: 12 / 14 / 16 / 20.                                          *
+   */
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+
+  /* ---- Typography: line-heights ------------------------------------------ */
+  --leading-tight: 1.15;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.625; /* default body leading — Stripe/Geist ratio */
+  --leading-loose: 1.8;
+
+  /* ---- Typography: measure (reading width in `ch`) ----------------------- */
+  --measure-narrow: 64ch;
+  --measure-default: 68ch;
+  --measure-wide: 80ch;
+
+  /* ---- Radii ------------------------------------------------------------- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* Legacy alias kept in service */
+  /* TODO(vedox-flagship-ux): drop once every border-radius call-site      */
+  /* moves to the new scale.                                                */
+
+  /* ---- Motion: durations ------------------------------------------------- */
+  --duration-fast: 120ms;
+  --duration-default: 180ms;
+  --duration-slow: 240ms;
+
+  /* ---- Motion: easings --------------------------------------------------- */
+  --ease-out:      cubic-bezier(0.16, 1.00, 0.30, 1.00); /* general hover */
+  --ease-in-out:   cubic-bezier(0.65, 0.00, 0.35, 1.00); /* sidebar, modals */
+  --ease-snap:     cubic-bezier(0.85, 0.00, 0.15, 1.00); /* signature */
+  --ease-spring:   cubic-bezier(0.20, 0.00, 0.00, 1.00); /* command palette */
+
+  /* ---- Z-index scale ----------------------------------------------------- */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-tooltip: 30;
+  --z-popover: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+  --z-cmdk: 70;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   2. Default theme — Graphite (dark, neutral indigo accent)
+   ──────────────────────────────────────────────────────────────────────────
+
+   The default lives at :root so that a user with JS disabled and no
+   stored preference still gets a fully themed experience. Other themes
+   override these values via [data-theme="..."] selectors in themes.css.
+*/
+
+:root {
+  /* ---- Surface ladder (4 layers + code surface) -------------------------- */
+  --surface-0: oklch(14% 0.01 265);   /* page canvas, the deepest */
+  --surface-1: oklch(11% 0.01 265);   /* editor well / sunken */
+  --surface-2: oklch(16% 0.01 265);   /* default panels */
+  --surface-3: oklch(19% 0.012 265);  /* sidebar / toolbar */
+  --surface-4: oklch(22% 0.014 265);  /* modals / popovers */
+  --surface-code: oklch(11% 0.01 265);
+
+  /* ---- Text ladder ------------------------------------------------------- */
+  --text-1: oklch(96% 0.005 265); /* primary — headings, emphasis */
+  --text-2: oklch(78% 0.008 265); /* secondary — body copy default */
+  --text-3: oklch(60% 0.010 265); /* muted — captions */
+  --text-4: oklch(45% 0.010 265); /* subtle — placeholder, gutter */
+  --text-inverse: oklch(15% 0.01 265);
+
+  /* ---- Accent (Graphite indigo) ------------------------------------------ */
+  --accent-solid: oklch(62% 0.18 265);
+  --accent-solid-hover: oklch(68% 0.18 265);
+  --accent-text: oklch(80% 0.14 265);
+  --accent-subtle: oklch(62% 0.18 265 / 0.14);
+  --accent-border: oklch(42% 0.12 265);
+  --accent-contrast: oklch(98% 0.005 265);
+
+  /* ---- Borders (hairline) ------------------------------------------------- */
+  --border-hairline: oklch(28% 0.010 265);
+  --border-default: oklch(34% 0.012 265);
+  --border-strong: oklch(46% 0.014 265);
+
+  /* ---- Status colours ---------------------------------------------------- */
+  --success: oklch(74% 0.16 162);
+  --warning: oklch(80% 0.14 80);
+  --error:   oklch(70% 0.18 25);
+  --info:    oklch(72% 0.14 230);
+
+  /* ---- Single overlay shadow --------------------------------------------- */
+  --shadow-overlay:
+    0 0 0 1px oklch(34% 0.012 265 / 0.6),
+    0 1px 2px oklch(0% 0 0 / 0.4),
+    0 8px 24px oklch(0% 0 0 / 0.32),
+    0 32px 80px oklch(0% 0 0 / 0.36);
+
+  /* ─────────────── Legacy aliases (Phase-1 components) ─────────────── */
+  /* Keep these in sync with the new tokens until every component         */
+  /* migrates. They must resolve to the same values for the swap to be    */
+  /* invisible.                                                           */
+  --color-surface-base: var(--surface-2);
+  --color-surface-elevated: var(--surface-3);
+  --color-surface-overlay: var(--surface-4);
+  --color-surface-code: var(--surface-code);
+
+  --color-text-primary: var(--text-1);
+  --color-text-secondary: var(--text-2);
+  --color-text-muted: var(--text-3);
+  --color-text-subtle: var(--text-4);
+  --color-text-inverse: var(--text-inverse);
+
+  --color-accent: var(--accent-solid);
+  --color-accent-hover: var(--accent-solid-hover);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-border: var(--border-default);
+  --color-border-strong: var(--border-strong);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error:   var(--error);
+  --color-info:    var(--info);
+
+  --shadow-sm: 0 1px 3px oklch(0% 0 0 / 0.3), 0 1px 2px oklch(0% 0 0 / 0.2);
+  --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.4), 0 2px 4px oklch(0% 0 0 / 0.25);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   3. Code syntax colours (derived from the active accent)
+   ──────────────────────────────────────────────────────────────────────────
+
+   Fixed scaffold: strings / numbers / functions stay stable across themes
+   so readers never lose the "string is green" mental model. Keywords and
+   types re-tint with the accent — when you swap Graphite for Ember, the
+   code block quietly warms.
+*/
+
+:root {
+  --code-bg: var(--surface-code);
+  --code-fg: var(--text-1);
+
+  --code-comment:  var(--text-3);
+  --code-keyword:  var(--accent-solid);
+  --code-string:   oklch(74% 0.14 145);
+  --code-number:   oklch(78% 0.13 65);
+  --code-function: oklch(76% 0.13 220);
+  --code-type:     oklch(72% 0.16 305);
+  --code-variable: var(--text-1);
+  --code-operator: var(--text-2);
+  --code-punct:    var(--text-3);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   4. Density modes
+   ──────────────────────────────────────────────────────────────────────────
+
+   Components that want to scale with density multiply their spacing
+   by var(--density). This gives a single dial for everything from row
+   heights to padding. Font sizes stay stable — size is controlled at
+   the per-component level.
+*/
+
+:root[data-density="compact"]     { --density: 0.875; }
+:root[data-density="comfortable"] { --density: 1.000; }
+:root[data-density="cozy"]        { --density: 1.125; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   5. Provider brand accents (unchanged from Phase 1)
+   ──────────────────────────────────────────────────────────────────────────
+   These are the ONLY hardcoded brand colours in the system. Used
+   exclusively as a 3px left-border on the active provider pill inside
+   ProviderDrawer. They do not retheme.
+*/
+
+:root {
+  --provider-accent-claude: #c1543f;  /* Anthropic Claude orange */
+  --provider-accent-gemini: #4285f4;  /* Google Gemini blue */
+  --provider-accent-codex:  #10a37f;  /* OpenAI teal */
+}
