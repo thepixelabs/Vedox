@@ -1,0 +1,119 @@
+/*
+ * fonts.css — Self-hosted @font-face declarations for the Vedox editor.
+ *
+ * Three typeface families:
+ *   1. Geist Variable       — body / UI text (sans-serif)
+ *   2. Source Serif 4 + Fraunces Variable — display / prose headings (serif)
+ *   3. JetBrains Mono Variable — code blocks / mono contexts
+ *
+ * Each @font-face uses `font-display: swap` so the browser renders text
+ * immediately with the metric-override fallback, then swaps in the real
+ * font once loaded. The metric-override properties (size-adjust,
+ * ascent-override, descent-override, line-gap-override) prevent
+ * layout shift during the FOUT window.
+ *
+ * woff2 files live in /static/fonts/ and are fetched by
+ * `scripts/fetch-fonts.ts`. Paths here are relative to the web root.
+ */
+
+/* ── Metric-override fallbacks ─────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial");
+  size-adjust: 100%;
+  ascent-override: 90%;
+  descent-override: 22%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Source Serif 4 Fallback";
+  src: local("Georgia");
+  size-adjust: 103%;
+  ascent-override: 80%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Fraunces Fallback";
+  src: local("Georgia");
+  size-adjust: 103%;
+  ascent-override: 80%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "JetBrains Mono Fallback";
+  src: local("Menlo");
+  size-adjust: 99%;
+  ascent-override: 85%;
+  descent-override: 21%;
+  line-gap-override: 0%;
+}
+
+/* ── Geist Variable (wght 100–900) ─────────────────────────────────────── */
+
+@font-face {
+  font-family: "Geist Variable";
+  src: url("/fonts/GeistVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Source Serif 4 Variable (wght 200–900) ────────────────────────────── */
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4Variable-Roman.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4Variable-Italic.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ── Fraunces Variable (wght 100–900, opsz, WONK) ─────────────────────── */
+
+@font-face {
+  font-family: "Fraunces Variable";
+  src: url("/fonts/FrauncesVariable-Roman.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Fraunces Variable";
+  src: url("/fonts/FrauncesVariable-Italic.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ── JetBrains Mono Variable (wght 100–800) ────────────────────────────── */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMonoVariable.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMonoVariable-Italic.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: italic;
+  font-display: swap;
+}

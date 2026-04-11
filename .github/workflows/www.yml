@@ -1,0 +1,96 @@
+name: www
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/www/**'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+      - '.github/workflows/www.yml'
+  pull_request:
+    paths:
+      - 'apps/www/**'
+      - '.github/workflows/www.yml'
+  workflow_dispatch:
+
+# Deny all permissions by default; each job grants only what it needs.
+permissions: {}
+
+concurrency:
+  group: www-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm --filter @vedox/www check
+
+      - name: Lint
+        run: pnpm --filter @vedox/www lint
+        continue-on-error: true
+
+      - name: Build
+        run: pnpm --filter @vedox/www build
+        env:
+          PUBLIC_SITE_URL: https://vedox.dev
+
+      - name: Upload Pages artifact
+        # Only upload on pushes to main so deploy-pages can consume it.
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/www/build
+
+  lighthouse:
+    name: Lighthouse budgets
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: apps/www/build
+        continue-on-error: true
+      - name: Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          configPath: apps/www/.lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+        continue-on-error: true
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

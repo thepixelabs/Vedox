@@ -1,0 +1,122 @@
+// Package api implements the HTTP API server that bridges the DocStore and
+// SQLite search to the SvelteKit frontend.
+//
+// Security invariants enforced here (see EPIC-001 Security Architecture):
+//   - CSP header on every response
+//   - CORS restricted to localhost:5151 and 127.0.0.1:5151 only (Vite dev)
+//   - Request/response bodies are never logged
+//   - All path parameters are validated before use (see docs.go)
+package api
+
+import (
+	"log/slog"
+	"net/http"
+	"time"
+)
+
+// corsAllowedOrigins is the explicit allowlist. Anything not in this list
+// receives no CORS headers, which causes browsers to block the request.
+// We do not use a wildcard — this is a localhost-only server and we want
+// to be explicit about which origin the SvelteKit dev server uses.
+var corsAllowedOrigins = map[string]bool{
+	"http://localhost:5151":  true,
+	"http://127.0.0.1:5151":  true,
+}
+
+// securityHeaders applies the security headers mandated by EPIC-001 to every
+// response. This is called from corsMiddleware so the two concerns travel
+// together and neither can be applied without the other.
+func applySecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; script-src 'none'; object-src 'none'")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+}
+
+// corsMiddleware adds CORS headers for allowed origins, sets the security
+// headers on every response, and enforces a server-side Origin check on
+// every state-mutating request (POST/PUT/PATCH/DELETE).
+//
+// CSRF defense: browser CORS is enforced on the RESPONSE side. A malicious
+// page can still SEND a "simple" cross-origin request (e.g. POST with
+// text/plain) and the browser will deliver it to the server even though it
+// then blocks the response from being read. For a localhost API on a dev
+// machine, that's a CSRF surface — a drive-by tab could write to provider
+// config files. We close it by rejecting any mutating request whose Origin
+// header is missing OR not in our allowlist. GET/HEAD/OPTIONS pass through.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+
+		applySecurityHeaders(w)
+
+		if corsAllowedOrigins[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+			w.Header().Set("Access-Control-Max-Age", "3600")
+			// Vary tells caches that the response may differ by Origin.
+			w.Header().Add("Vary", "Origin")
+		}
+
+		// Short-circuit preflight requests. The browser sends OPTIONS before
+		// the real request to check CORS permissions; we answer and stop here.
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// CSRF defense: reject mutating requests whose Origin is not in the
+		// allowlist. The browser always sends Origin on cross-origin fetch
+		// requests, so an empty Origin on a mutating verb is either a
+		// command-line client (curl/Postman) — which we still want to require
+		// the explicit header from in dev — or a drive-by attack we want to block.
+		switch r.Method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			if !corsAllowedOrigins[origin] {
+				slog.Warn("api: rejecting mutating request with disallowed origin",
+					"method", r.Method,
+					"path", r.URL.Path,
+					"origin", origin,
+				)
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":"VDX-403","message":"origin not allowed for mutating request"}`))
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// loggingMiddleware records every request with method, path, status code, and
+// duration. Bodies are deliberately never logged (EPIC-001 logging invariant).
+// Status capture uses a thin responseWriter wrapper so we can read the code
+// after the handler returns.
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rw, r)
+		slog.Info("api.request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rw.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+	})
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the HTTP status code
+// written by the handler. It implements http.ResponseWriter only — no
+// Hijacker/Flusher delegation is needed for this API server.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}

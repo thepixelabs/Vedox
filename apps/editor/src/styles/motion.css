@@ -1,0 +1,66 @@
+/*
+ * motion.css — Vedox motion primitives
+ *
+ * Defines:
+ *   - The universal prefers-reduced-motion kill switch
+ *   - The .interactive helper class (hover / focus / active grammar)
+ *   - A safe default theme-crossfade behaviour (wired via themes.css)
+ *
+ * Durations and easings live in tokens.css. This file only applies
+ * them to top-level patterns — individual components still style
+ * their own transitions with the same token set.
+ *
+ * Reference: design-system.md §4 (motion thesis, easing curves, durations)
+ */
+
+/*
+ * Universal interactive grammar.
+ * Add class="interactive" to any clickable element to inherit the
+ * shared hover / focus / active behaviour.
+ */
+.interactive {
+  border: 1px solid var(--border-hairline);
+  background-color: var(--surface-2);
+  color: var(--text-2);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform 60ms var(--ease-out);
+}
+
+.interactive:hover {
+  border-color: var(--border-strong);
+  background-color: color-mix(in oklch, var(--surface-2) 92%, var(--accent-solid) 8%);
+  color: var(--text-1);
+}
+
+.interactive:focus-visible {
+  outline: 2px solid var(--accent-solid);
+  outline-offset: 3px;
+  border-color: var(--accent-solid);
+}
+
+.interactive:active {
+  transform: scale(0.985);
+}
+
+/*
+ * prefers-reduced-motion — the kill switch.
+ * Runs over the entire document. Keeps opacity fades because they
+ * are not motion, but cuts transform / scale / translate animations.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .interactive:active {
+    transform: none !important;
+  }
+}

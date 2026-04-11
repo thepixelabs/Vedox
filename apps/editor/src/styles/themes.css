@@ -1,0 +1,220 @@
+/*
+ * themes.css — Vedox named themes
+ *
+ * Five curated themes. Each block overrides only the tokens that change:
+ * surface ladder, text ladder, borders, accent, and code bindings.
+ * Spacing, typography, motion, and density stay constant.
+ *
+ * Default theme (Graphite) lives in tokens.css at :root — this file
+ * provides the four alternatives.
+ *
+ * Switching is a single attribute swap: document.documentElement.setAttribute(
+ *   "data-theme", "eclipse" | "ember" | "paper" | "solar"
+ * )
+ *
+ * References:
+ *   .tasks/vedox-flagship-ux/research/cmp-dark-mode.md §4 (theme set)
+ *   .tasks/vedox-flagship-ux/design-system.md §2 (colour system)
+ */
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Eclipse — true-black OLED dark with violet accent (#7C5CFF family)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="eclipse"] {
+  --surface-0: oklch(4%  0.003 290);
+  --surface-1: oklch(2%  0.002 290);
+  --surface-2: oklch(7%  0.006 290);
+  --surface-3: oklch(10% 0.010 290);
+  --surface-4: oklch(13% 0.014 290);
+  --surface-code: oklch(2% 0.002 290);
+
+  --text-1: oklch(97% 0.006 290);
+  --text-2: oklch(80% 0.010 290);
+  --text-3: oklch(60% 0.014 290);
+  --text-4: oklch(42% 0.014 290);
+  --text-inverse: oklch(8% 0.002 290);
+
+  --accent-solid:       oklch(68% 0.20 290);
+  --accent-solid-hover: oklch(74% 0.20 290);
+  --accent-text:        oklch(82% 0.16 290);
+  --accent-subtle:      oklch(68% 0.20 290 / 0.18);
+  --accent-border:      oklch(46% 0.16 290);
+  --accent-contrast:    oklch(99% 0.004 290);
+
+  --border-hairline: oklch(18% 0.014 290);
+  --border-default:  oklch(26% 0.018 290);
+  --border-strong:   oklch(40% 0.022 290);
+
+  --shadow-overlay:
+    0 0 0 1px oklch(20% 0.014 290 / 0.7),
+    0 1px 2px oklch(0% 0 0 / 0.55),
+    0 10px 28px oklch(0% 0 0 / 0.5),
+    0 40px 90px oklch(0% 0 0 / 0.5);
+
+  /* Code: violet keyword, unchanged fixed palette */
+  --code-keyword: var(--accent-solid);
+  --code-type:    oklch(72% 0.18 325);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Ember — warm near-black with terracotta accent
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="ember"] {
+  --surface-0: oklch(13% 0.012 40);
+  --surface-1: oklch(10% 0.010 40);
+  --surface-2: oklch(15% 0.014 40);
+  --surface-3: oklch(18% 0.016 40);
+  --surface-4: oklch(22% 0.020 40);
+  --surface-code: oklch(10% 0.010 40);
+
+  --text-1: oklch(96% 0.010 40);
+  --text-2: oklch(80% 0.014 40);
+  --text-3: oklch(62% 0.018 40);
+  --text-4: oklch(46% 0.016 40);
+  --text-inverse: oklch(15% 0.014 40);
+
+  --accent-solid:       oklch(70% 0.17 45);
+  --accent-solid-hover: oklch(76% 0.17 45);
+  --accent-text:        oklch(82% 0.13 50);
+  --accent-subtle:      oklch(70% 0.17 45 / 0.16);
+  --accent-border:      oklch(48% 0.12 45);
+  --accent-contrast:    oklch(99% 0.008 40);
+
+  --border-hairline: oklch(25% 0.018 40);
+  --border-default:  oklch(32% 0.020 40);
+  --border-strong:   oklch(44% 0.022 40);
+
+  --shadow-overlay:
+    0 0 0 1px oklch(32% 0.02 40 / 0.6),
+    0 1px 2px oklch(0% 0 0 / 0.45),
+    0 8px 24px oklch(0% 0 0 / 0.36),
+    0 32px 80px oklch(0% 0 0 / 0.4);
+
+  /* Code: warm keyword, sage-ish type */
+  --code-keyword: var(--accent-solid);
+  --code-type:    oklch(74% 0.14 160);
+  --code-string:  oklch(78% 0.14 130);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Paper — warm off-white editorial light theme
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="paper"] {
+  --surface-0: oklch(98.5% 0.005 85);
+  --surface-1: oklch(96%   0.008 85);
+  --surface-2: oklch(100%  0     0);
+  --surface-3: oklch(98%   0.004 85);
+  --surface-4: oklch(100%  0     0);
+  --surface-code: oklch(96% 0.008 85);
+
+  --text-1: oklch(18% 0.012 265);
+  --text-2: oklch(34% 0.012 265);
+  --text-3: oklch(48% 0.010 265);
+  --text-4: oklch(64% 0.008 265);
+  --text-inverse: oklch(99% 0.004 85);
+
+  --accent-solid:       oklch(52% 0.16 265);
+  --accent-solid-hover: oklch(46% 0.18 265);
+  --accent-text:        oklch(42% 0.16 265);
+  --accent-subtle:      oklch(52% 0.16 265 / 0.12);
+  --accent-border:      oklch(72% 0.12 265);
+  --accent-contrast:    oklch(99% 0.004 85);
+
+  --border-hairline: oklch(91% 0.005 85);
+  --border-default:  oklch(85% 0.006 85);
+  --border-strong:   oklch(70% 0.008 85);
+
+  --shadow-overlay:
+    0 0 0 1px oklch(80% 0.010 85 / 0.7),
+    0 1px 2px oklch(20% 0.02 85 / 0.08),
+    0 8px 24px oklch(20% 0.02 85 / 0.10),
+    0 32px 80px oklch(20% 0.02 85 / 0.14);
+
+  /* Status colours slightly darker for readable contrast on warm light */
+  --success: oklch(48% 0.15 162);
+  --warning: oklch(58% 0.14 70);
+  --error:   oklch(52% 0.20 25);
+  --info:    oklch(50% 0.16 230);
+
+  /* Code: darker keyword so it reads on warm paper */
+  --code-comment:  oklch(58% 0.008 265);
+  --code-keyword:  var(--accent-solid);
+  --code-string:   oklch(46% 0.16 145);
+  --code-number:   oklch(54% 0.16 40);
+  --code-function: oklch(48% 0.16 220);
+  --code-type:     oklch(48% 0.18 305);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Solar — cream Solarized-inspired light with amber accent
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="solar"] {
+  --surface-0: oklch(97%   0.020 90);
+  --surface-1: oklch(94%   0.025 90);
+  --surface-2: oklch(99%   0.016 90);
+  --surface-3: oklch(97%   0.020 90);
+  --surface-4: oklch(100%  0.010 90);
+  --surface-code: oklch(94% 0.025 90);
+
+  --text-1: oklch(28% 0.040 60);
+  --text-2: oklch(40% 0.035 60);
+  --text-3: oklch(54% 0.030 60);
+  --text-4: oklch(68% 0.020 60);
+  --text-inverse: oklch(99% 0.016 90);
+
+  --accent-solid:       oklch(60% 0.17 75);
+  --accent-solid-hover: oklch(54% 0.19 70);
+  --accent-text:        oklch(48% 0.18 70);
+  --accent-subtle:      oklch(60% 0.17 75 / 0.14);
+  --accent-border:      oklch(74% 0.13 75);
+  --accent-contrast:    oklch(99% 0.016 90);
+
+  --border-hairline: oklch(90% 0.020 90);
+  --border-default:  oklch(82% 0.025 90);
+  --border-strong:   oklch(68% 0.030 80);
+
+  --shadow-overlay:
+    0 0 0 1px oklch(80% 0.025 75 / 0.7),
+    0 1px 2px oklch(30% 0.06 70 / 0.10),
+    0 8px 24px oklch(30% 0.06 70 / 0.14),
+    0 32px 80px oklch(30% 0.06 70 / 0.18);
+
+  /* Status colours tuned for cream background */
+  --success: oklch(50% 0.15 160);
+  --warning: oklch(60% 0.16 70);
+  --error:   oklch(52% 0.20 25);
+  --info:    oklch(50% 0.16 230);
+
+  /* Code: keep the Solarized spirit */
+  --code-comment:  oklch(60% 0.020 60);
+  --code-keyword:  var(--accent-solid);
+  --code-string:   oklch(52% 0.16 150);
+  --code-number:   oklch(54% 0.16 40);
+  --code-function: oklch(50% 0.16 215);
+  --code-type:     oklch(48% 0.17 310);
+}
+
+/*
+ * Theme transition suppression.
+ * Added to <html> immediately and removed on next frame when the theme
+ * is swapped — prevents the entire document from crossfading every
+ * pixel on user action.
+ */
+html.theme-transition,
+html.theme-transition * {
+  transition-property: color, background-color, border-color, fill, stroke !important;
+  transition-duration: var(--duration-default) !important;
+  transition-timing-function: var(--ease-in-out) !important;
+}
+
+/*
+ * Initial-paint suppression.
+ * app.html writes html.theme-ready on load; before that the whole
+ * tree has transitions disabled to avoid any hydration flicker.
+ */
+html:not(.theme-ready) *,
+html:not(.theme-ready) *::before,
+html:not(.theme-ready) *::after {
+  transition: none !important;
+  animation-duration: 0ms !important;
+}

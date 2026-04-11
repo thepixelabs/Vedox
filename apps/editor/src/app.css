@@ -1,0 +1,102 @@
+/*
+ * app.css — Global baseline styles for the Vedox editor.
+ *
+ * This file imports the flagship style layers in cascade order:
+ *   1. tokens.css      — primitives + default Graphite theme
+ *   2. themes.css      — Eclipse / Ember / Paper / Solar overrides
+ *   3. typography.css  — Geist / Fraunces / Commit Mono + type rules
+ *   4. motion.css      — prefers-reduced-motion + .interactive helper
+ *
+ * Component styles live in their .svelte files and read design values
+ * through CSS custom properties only. Never put design values here.
+ */
+
+@import "./styles/tokens.css";
+@import "./styles/themes.css";
+@import "./styles/typography.css";
+@import "./styles/layout.css";
+@import "./styles/mermaid.css";
+@import "./styles/tables.css";
+@import "./styles/motion.css";
+
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────────── *
+ * The `html` font stack, size, and smoothing are set in typography.css.
+ * This block only declares theme colour + root-level transitions so the
+ * backdrop stays in sync with the active theme's surface-2.
+ */
+html {
+  color: var(--text-1);
+  background-color: var(--surface-2);
+  transition:
+    background-color var(--duration-default) var(--ease-in-out),
+    color var(--duration-default) var(--ease-in-out);
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Focus indicators — replace browser default with design system version ── */
+:focus-visible {
+  outline: 2px solid var(--accent-solid);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Remove focus ring for mouse users, keep for keyboard users */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Links ─────────────────────────────────────────────────────────────────── */
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+/* ── Scrollbar — subtle, fits dark-first aesthetic ─────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* ── Utility: visually hidden but accessible to screen readers ─────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

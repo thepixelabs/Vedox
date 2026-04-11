@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="graphite" data-density="comfortable">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#1a1a2e">
+
+		<!--
+		  Pre-hydration theme + density sync.
+		  Runs before any <link rel="stylesheet"> parses so we never flash the
+		  default Graphite theme to a user who has stored Eclipse / Ember /
+		  Paper / Solar. Deliberately written as a single synchronous block
+		  with a try/catch — a failing try must fall through to the document
+		  default (Graphite / comfortable).
+
+		  Accepted values:
+		    data-theme:    graphite | eclipse | ember | paper | solar
+		    data-density:  compact  | comfortable | cozy
+
+		  Legacy fallback: if a pre-flagship user still has "dark"/"light" in
+		  localStorage we translate them to graphite / paper so the transition
+		  is invisible.
+		-->
+		<script>
+			(function () {
+				try {
+					var root = document.documentElement;
+					var ALL_THEMES = ["graphite", "eclipse", "ember", "paper", "solar"];
+					var ALL_DENSITIES = ["compact", "comfortable", "cozy"];
+					var rawTheme = localStorage.getItem("vedox:theme");
+					var rawDensity = localStorage.getItem("vedox:density");
+
+					var theme = "graphite";
+					if (rawTheme) {
+						if (ALL_THEMES.indexOf(rawTheme) !== -1) theme = rawTheme;
+						else if (rawTheme === "dark") theme = "graphite";
+						else if (rawTheme === "light") theme = "paper";
+					}
+
+					var density = "comfortable";
+					if (rawDensity && ALL_DENSITIES.indexOf(rawDensity) !== -1) {
+						density = rawDensity;
+					}
+
+					root.setAttribute("data-theme", theme);
+					root.setAttribute(
+						"data-theme-mode",
+						theme === "paper" || theme === "solar" ? "light" : "dark"
+					);
+					root.setAttribute("data-density", density);
+
+					// Reading-measure custom property.
+					var readingMeasure = localStorage.getItem("vedox:reading-measure");
+					var measureMap = { narrow: "var(--measure-narrow,64ch)", "default": "var(--measure-default,68ch)", wide: "var(--measure-wide,80ch)" };
+					var measure = measureMap[readingMeasure] || measureMap["default"];
+					root.style.setProperty("--reading-measure", measure);
+
+					// Sidebar width / collapsed state.
+					var sidebarWidth = localStorage.getItem("vedox:sidebar-width");
+					var w = parseInt(sidebarWidth, 10);
+					if (!isNaN(w) && w >= 200 && w <= 480) {
+						root.style.setProperty("--sidebar-width", w + "px");
+					}
+					var sidebarCollapsed = localStorage.getItem("vedox:sidebar-collapsed");
+					if (sidebarCollapsed === "true") {
+						root.style.setProperty("--sidebar-width", "0px");
+					}
+
+					// Mark the tree ready so theme transitions resume after first paint.
+					// Use rAF so styles apply in the initial-paint suppression window.
+					requestAnimationFrame(function () {
+						root.classList.add("theme-ready");
+					});
+				} catch (e) {
+					/* ignore — fall back to document defaults */
+				}
+			})();
+		</script>
+
+%sveltekit.head%
+	</head>
+	<!--
+		The html element ships data-theme="graphite" and data-density="comfortable"
+		as the static default so a JS-disabled visitor still gets a fully themed
+		render. The inline script above swaps those attributes before stylesheets
+		parse if the user has a stored preference, and the ThemeStore reads the
+		same localStorage key on mount to keep Svelte's reactive state in sync.
+	-->
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

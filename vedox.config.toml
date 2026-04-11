@@ -1,0 +1,4 @@
+# Vedox workspace configuration
+port = 5150
+workspace = "."
+profile = "dev"

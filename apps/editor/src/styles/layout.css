@@ -1,0 +1,79 @@
+/* layout.css — responsive container system for Vedox
+ *
+ * Seven breakpoints x four template types.
+ * All values from design-system.md S3.2 and master-vision.md S4.
+ */
+
+:root {
+  /* App shell — the full-width chrome wrapping sidebar + content */
+  --container-app-shell: 100vw;
+
+  /* Editor canvas — the writing surface inside the shell */
+  --container-editor: min(calc(100vw - var(--sidebar-width, 240px) - 48px), 900px);
+
+  /* Prose — a reading-optimised article column */
+  --container-prose: min(var(--measure-default, 68ch), 760px);
+
+  /* Reference — wide-table / API-reference template */
+  --container-reference: min(calc(100vw - var(--sidebar-width, 240px) - 48px), 1200px);
+
+  /* Sidebar width CSS variable (set by sidebarStore) */
+  --sidebar-width: 240px;
+}
+
+/* -- 1280px — standard laptop */
+@media (min-width: 1280px) {
+  :root {
+    --container-editor: min(calc(100vw - var(--sidebar-width) - 64px), 960px);
+    --container-reference: min(calc(100vw - var(--sidebar-width) - 64px), 1280px);
+  }
+}
+
+/* -- 1440px — large laptop / small external */
+@media (min-width: 1440px) {
+  :root {
+    --container-editor: min(calc(100vw - var(--sidebar-width) - 80px), 1060px);
+    --container-reference: min(calc(100vw - var(--sidebar-width) - 80px), 1360px);
+    --container-prose: min(var(--measure-default, 68ch), 840px);
+  }
+}
+
+/* -- 1920px — 1080p full HD — three-zone layout kicks in */
+@media (min-width: 1920px) {
+  :root {
+    --container-editor: min(calc(100vw - var(--sidebar-width) - var(--sidecar-width, 0px) - 96px), 1200px);
+    --container-reference: min(calc(100vw - var(--sidebar-width) - var(--sidecar-width, 0px) - 96px), 1600px);
+    --container-prose: min(var(--measure-default, 68ch), 880px);
+    --sidecar-width: 280px; /* metadata sidecar appears at 1920px+ */
+  }
+}
+
+/* -- 2560px — 2K / QHD */
+@media (min-width: 2560px) {
+  :root {
+    --container-editor: min(calc(100vw - var(--sidebar-width) - var(--sidecar-width, 280px) - 128px), 1400px);
+    --container-reference: min(calc(100vw - var(--sidebar-width) - var(--sidecar-width, 280px) - 128px), 1800px);
+    --sidecar-width: 320px;
+  }
+}
+
+/* -- 3440px — ultrawide */
+@media (min-width: 3440px) {
+  :root {
+    --container-editor: min(calc(100vw - var(--sidebar-width) - var(--sidecar-width, 320px) - 160px), 1600px);
+    --container-reference: min(calc(100vw - var(--sidebar-width) - var(--sidecar-width, 320px) - 160px), 2000px);
+  }
+}
+
+/* -- 3840px — 4K */
+@media (min-width: 3840px) {
+  :root {
+    --container-editor: min(calc(100vw - var(--sidebar-width) - var(--sidecar-width, 320px) - 192px), 1800px);
+    --container-reference: min(calc(100vw - var(--sidebar-width) - var(--sidecar-width, 320px) - 192px), 2400px);
+  }
+}
+
+/* -- Sidebar collapsed: tighten all containers */
+[data-sidebar-collapsed="true"] {
+  --sidebar-width: 0px;
+}
