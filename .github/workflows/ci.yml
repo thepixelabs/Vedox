@@ -13,6 +13,9 @@ on:
     branches:
       - main
 
+# Deny all permissions by default; jobs grant only what they need.
+permissions: {}
+
 jobs:
   # ── Node / SvelteKit pipeline ──────────────────────────────────────────────
   node:
@@ -24,6 +27,9 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -80,6 +86,9 @@ jobs:
           - ubuntu-latest
           - macos-latest
 
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -91,7 +100,9 @@ jobs:
           cache-dependency-path: apps/cli/go.sum
 
       - name: Verify go.work
-        run: go work sync
+        run: |
+          go work sync
+          git diff --exit-code go.work
         working-directory: .
 
       - name: Verify go.sum is tidy
@@ -119,7 +130,7 @@ jobs:
       # cross-compiled so one SBOM covers the dependency graph.
       - name: Install cyclonedx-gomod
         if: matrix.os == 'ubuntu-latest'
-        run: go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+        run: go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.6.0
 
       - name: Generate Go SBOM
         if: matrix.os == 'ubuntu-latest'
