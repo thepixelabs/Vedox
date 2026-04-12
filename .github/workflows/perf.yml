@@ -9,11 +9,17 @@ on:
       - '.github/workflows/perf.yml'
   workflow_dispatch:
 
+# Deny all permissions by default; the perf job grants only contents: read.
+permissions: {}
+
 jobs:
   perf:
     name: Check perf budgets
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +27,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
