@@ -38,6 +38,7 @@
     "@tiptap/starter-kit": "^2.11.5",
     "diff": "^7.0.0",
     "dompurify": "^3.2.4",
+    "katex": "^0.16.11",
     "gray-matter": "^4.0.3",
     "mermaid": "^11.4.1",
     "shiki": "^4.0.2",
