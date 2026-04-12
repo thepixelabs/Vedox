@@ -1,5 +1,3 @@
 go 1.23
 
-use (
-	./apps/cli
-)
+use ./apps/cli
