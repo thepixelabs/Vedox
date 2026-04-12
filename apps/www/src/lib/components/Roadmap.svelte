@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { roadmap } from '$lib/content';
+	import { reveal } from '$lib/actions/reveal';
+
+	const delays = [0, 80, 160];
 </script>
 
 <section id={roadmap.id} class="roadmap">
 	<div class="container">
-		<p class="kicker">{roadmap.kicker}</p>
-		<h2>{roadmap.title}</h2>
+		<p class="kicker" use:reveal>{roadmap.kicker}</p>
+		<h2 use:reveal={{ delay: 60 }}>{roadmap.title}</h2>
 		<ol>
-			{#each roadmap.items as item (item.phase)}
-				<li class="item {item.status}">
+			{#each roadmap.items as item, i (item.phase)}
+				<li class="item {item.status}" use:reveal={{ delay: delays[i] ?? 0 }}>
 					<div class="head">
 						<span class="phase">{item.phase}</span>
 						<span class="chip">
@@ -35,6 +38,11 @@
 					<p>{item.body}</p>
 				</li>
 			{/each}
+			<li class="item card placeholder" use:reveal={{ delay: 240 }}>
+				<div class="phase-badge">Phase 4</div>
+				<p class="status-line">// not yet written.</p>
+				<a href="https://github.com/thepixelabs/vedox/issues" class="open-issues" rel="noopener">./open-issues</a>
+			</li>
 		</ol>
 	</div>
 </section>
@@ -133,11 +141,43 @@
 			box-shadow: 0 0 0 0 transparent;
 		}
 	}
+	@media (prefers-reduced-motion: reduce) {
+		.pulse {
+			animation: none;
+		}
+	}
 	h3 {
 		font-size: var(--font-size-xl);
 		margin-bottom: var(--space-3);
 	}
 	p {
 		color: var(--color-text-secondary);
+	}
+	.card.placeholder {
+		border-style: dashed;
+		border-color: var(--color-border-strong);
+		background: transparent;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: flex-start;
+		gap: var(--space-4);
+	}
+	.phase-badge {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-text-muted);
+	}
+	.status-line {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-muted);
+	}
+	.open-issues {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-sm);
+		color: var(--color-accent);
 	}
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { features } from '$lib/content';
+	import { reveal } from '$lib/actions/reveal';
 
 	const icons: Record<string, string> = {
 		edit: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7 M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z',
@@ -20,8 +21,8 @@
 
 <section id={features.id} class="features">
 	<div class="container">
-		<p class="kicker">{features.kicker}</p>
-		<h2>{features.title}</h2>
+		<p class="kicker" use:reveal>{features.kicker}</p>
+		<h2 use:reveal={{ delay: 60 }}>{features.title}</h2>
 
 		{#each features.groups as group (group.category)}
 			<div class="group" style="--group-accent: {accents[group.icon] || 'var(--color-accent)'}">
@@ -56,6 +57,9 @@
 </section>
 
 <style>
+	.features {
+		padding: var(--mkt-section-pad) 0;
+	}
 	.kicker {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-xs);
