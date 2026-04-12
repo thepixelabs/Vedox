@@ -32,7 +32,7 @@ export const nav = {
 } as const;
 
 export const hero = {
-	eyebrow: 'Local-first documentation CMS',
+	eyebrow: './local-first',
 	headline: 'docs that live where the code lives.',
 	sub: 'markdown in, git history out. no server, no account, no asking permission.',
 	primaryCta: { label: 'Copy install command', command: site.installCommand },
@@ -389,7 +389,7 @@ export const faq = {
 export const roadmap = {
 	id: 'roadmap',
 	kicker: 'What\u2019s shipped, what\u2019s next',
-	title: 'roadmap.',
+	title: 'three phases. all shipped.',
 	items: [
 		{
 			phase: 'Phase 1',
@@ -414,15 +414,31 @@ export const roadmap = {
 
 export const waitlist = {
 	id: 'waitlist',
-	kicker: 'Ship day is coming',
+	kicker: './waitlist',
 	title: 'be the first to install on launch day.',
 	body: 'One email, launch-day only. No newsletter, no drip, no sales sequence. Unsubscribe is a single click and we delete the address.',
 	placeholder: 'you@yourdomain.dev',
 	button: './install',
+	sending: 'sending',
 	success: 'Got it. We\u2019ll email once when Vedox is ready to install.',
 	failure: 'Something went wrong. Try again or open an issue on GitHub.',
 	disabled:
 		'Waitlist endpoint not configured yet. Star the repo on GitHub and you\u2019ll see the launch there too.',
+} as const;
+
+export const midCta = {
+	comment: '// one command.',
+} as const;
+
+export const socialProof = {
+	kicker: 'used like this',
+	commits: [
+		{ hash: 'a3f12c1', message: 'docs: rewrite onboarding guide, add frontmatter for all new doc types' },
+		{ hash: '7e4b900', message: 'fix: correct sequence diagram in architecture.md, was rendering wrong edge labels' },
+		{ hash: 'c81d453', message: 'docs(adr): add ADR-009, capacity planning for indexing pipeline' },
+		{ hash: 'f2a09e4', message: 'chore: clean up contributing.md, remove outdated setup steps and fix code block formatting' },
+		{ hash: '9b3c772', message: 'docs: add vedox to project, 87 markdown files indexed on first run' },
+	],
 } as const;
 
 export const footer = {

@@ -4,6 +4,7 @@
 	import Pillars from '$lib/components/Pillars.svelte';
 	import EditorShowcase from '$lib/components/EditorShowcase.svelte';
 	import FeatureGrid from '$lib/components/FeatureGrid.svelte';
+	import SocialProof from '$lib/components/SocialProof.svelte';
 	import Comparison from '$lib/components/Comparison.svelte';
 	import InstallCommand from '$lib/components/InstallCommand.svelte';
 	import Workflow from '$lib/components/Workflow.svelte';
@@ -43,17 +44,35 @@
 <Pillars />
 <EditorShowcase />
 <FeatureGrid />
+<SocialProof />
 <Comparison />
-<div class="mid-cta"><InstallCommand location="compare" /></div>
+<section id="install" class="interstitial">
+	<div class="container interstitial-inner">
+		<p class="comment">// if the table convinced you, you already know what to do.</p>
+		<InstallCommand location="compare" />
+	</div>
+</section>
 <Workflow />
 <FAQ />
 <Roadmap />
 <Waitlist />
 
 <style>
-	.mid-cta {
+	.interstitial {
+		border-top: 1px solid var(--color-border);
+		border-bottom: 1px solid var(--color-border);
+		padding: var(--space-12) 0 !important;
+		margin-top: var(--space-8);
+	}
+	.interstitial-inner {
 		display: flex;
-		justify-content: center;
-		padding: var(--space-10) 0;
+		flex-direction: column;
+		gap: var(--space-4);
+		align-items: flex-start;
+	}
+	.comment {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-muted);
 	}
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { comparison } from '$lib/content';
+	import { reveal } from '$lib/actions/reveal';
 
 	type CellValue = boolean | 'partial' | 'n/a' | string;
 
@@ -22,8 +23,8 @@
 
 <section id={comparison.id} class="comparison">
 	<div class="container">
-		<p class="kicker">{comparison.kicker}</p>
-		<h2>{comparison.title}</h2>
+		<p class="kicker" use:reveal>{comparison.kicker}</p>
+		<h2 use:reveal={{ delay: 60 }}>{comparison.title}</h2>
 
 		<div class="table-frame">
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -82,6 +83,9 @@
 </section>
 
 <style>
+	.comparison {
+		padding: var(--mkt-section-pad) 0;
+	}
 	.kicker {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-xs);
