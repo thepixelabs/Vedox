@@ -352,20 +352,20 @@ export const faq = {
 	title: 'fair questions.',
 	items: [
 		{
-			q: 'Why not Obsidian?',
-			a: 'Obsidian is a personal knowledge base optimized around a single vault. Vedox is a docs CMS scoped to a repo, Git-native, built for a team that already lives in pull requests. Different tool, different job. If you use Obsidian for personal notes and need something for project documentation \u2014 that\u2019s the gap.',
+			q: "isn't this just a notes app?",
+			a: 'Notes apps are personal, vault-based, and built around a single user. Vedox is scoped to a repo, Git-native, and built for a team that already lives in pull requests. The unit of organization is your project, not your brain dump.',
 		},
 		{
-			q: 'Why not just write Markdown in VS Code?',
-			a: 'You can. Many of us do. Vedox adds what editors don\u2019t: instant full-text search ranked by relevance across your entire doc corpus, a dual-mode WYSIWYG with round-trip fidelity, a frontmatter linter, document templates, and an AI review queue. If VS Code is enough, keep using it.',
+			q: 'why not just use my text editor?',
+			a: 'You can. Many of us do. Vedox adds what editors don\u2019t: instant full-text search ranked by relevance across your entire doc corpus, a dual-mode WYSIWYG with round-trip fidelity, a frontmatter linter, document templates, and an AI review queue. If your editor is enough, keep using it.',
 		},
 		{
-			q: 'How does this compare to Confluence / Notion / GitBook?',
-			a: 'Those are cloud services. Your content lives on their servers, in their format, behind their login. Vedox stores everything as Markdown files in a Git repo you own. No vendor lock-in. No subscription. No "exporting" your own work.',
+			q: 'what about cloud-based doc tools?',
+			a: 'Cloud doc platforms store your content on their servers, in their format, behind their login. Vedox stores everything as Markdown files in a Git repo you own. No vendor lock-in. No subscription. No "exporting" your own work.',
 		},
 		{
-			q: 'How does this compare to static site generators like Docusaurus?',
-			a: 'Docusaurus builds a website from Markdown. Vedox is not a site generator \u2014 it is a local editor that reads and writes Markdown in your repo. If you need a published docs site, use Docusaurus to build it; use Vedox to write the content. They are complementary, not competing.',
+			q: 'how does this fit with a docs website?',
+			a: 'Static site generators build a website from Markdown. Vedox is not a site generator \u2014 it is a local editor that reads and writes Markdown in your repo. Use a site generator to publish; use Vedox to write. They are complementary.',
 		},
 		{
 			q: 'Can a team use this?',
