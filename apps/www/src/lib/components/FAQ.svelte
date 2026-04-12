@@ -2,8 +2,7 @@
   import { faq } from '$lib/content';
   import { trackFaqExpand } from '$lib/analytics';
 
-  // First item open by default
-  let openIndex = $state<number | null>(0);
+  let openIndex = $state<number | null>(null);
   let answerEls: HTMLElement[] = $state([]);
 
   function toggle(i: number) {
@@ -77,6 +76,22 @@
 </script>
 
 <section id={faq.id} class="faq">
+  <!-- Cartographers repo — bottom-right atmospheric texture -->
+  <img
+    class="faq-bg-img"
+    src="/vedox-logo-06-cartographers-repo-final.png"
+    alt=""
+    aria-hidden="true"
+    loading="lazy"
+    decoding="async"
+  />
+  <!-- Aurora ellipse — upper-left complementary light -->
+  <svg class="faq-aurora" aria-hidden="true">
+    <defs>
+      <filter id="faq-aurora-blur"><feGaussianBlur stdDeviation="55"/></filter>
+    </defs>
+    <ellipse class="faq-aurora-e1" cx="15%" cy="20%" rx="35%" ry="25%" fill="#818cf8" opacity="0.11" filter="url(#faq-aurora-blur)"/>
+  </svg>
   <div class="container">
     <p class="kicker">{faq.kicker}</p>
     <h2>{faq.title}</h2>
@@ -116,6 +131,61 @@
 </section>
 
 <style>
+  .faq {
+    position: relative;
+    overflow: hidden;
+  }
+  /* Cartographers repo — bottom-right corner, object facing inward */
+  .faq-bg-img {
+    position: absolute;
+    right: -8%;
+    bottom: -10%;
+    width: 55%;
+    height: auto;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.07;
+    object-fit: contain;
+    object-position: right bottom;
+    mix-blend-mode: luminosity;
+  }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .faq-bg-img {
+      opacity: 0.04;
+    }
+  }
+  @media (max-width: 767px) {
+    .faq-bg-img {
+      display: none;
+    }
+  }
+  /* Aurora — upper-left */
+  .faq-aurora {
+    position: absolute;
+    inset: -10% -5%;
+    width: 110%;
+    height: 120%;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .faq-aurora-e1 {
+    animation: faq-aurora-drift 22s ease-in-out infinite alternate;
+    animation-delay: -15s;
+  }
+  @keyframes faq-aurora-drift {
+    from { transform: translate(0, 0) scale(1); }
+    to   { transform: translate(3%, 2%) scale(1.05); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .faq-aurora-e1 {
+      animation: none;
+      transform: translate(1.5%, 1%) scale(1.025);
+    }
+  }
+  .container {
+    position: relative;
+    z-index: 1;
+  }
   .kicker {
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
