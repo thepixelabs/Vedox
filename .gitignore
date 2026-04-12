@@ -64,3 +64,20 @@ sbom-*.xml
 
 # ── Local MCP server config (developer-specific) ────────────────────────────
 .mcp.json
+
+# ── Private / personal notes ─────────────────────────────────────────────────
+private.md
+
+# ── Logo design exploration (not production assets) ──────────────────────────
+apps/www/static/logo-concept-*.svg
+
+# ── Crypto / certificate files ───────────────────────────────────────────────
+*.pem
+*.p12
+*.key
+*.pfx
+*.cer
+*.jks
+*.keystore
+secrets.json
+Secrets/
