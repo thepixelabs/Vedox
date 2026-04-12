@@ -335,7 +335,7 @@
                 {#if altergoAvailable}
                   Vedox tries accounts in order when a provider hits its usage limit. Drag or use the arrows to reorder.
                 {:else}
-                  <a href="https://github.com/altergo/altergo" target="_blank" rel="noopener noreferrer" class="ai-settings-link">Install AlterGo</a> to enable multi-account support. With multiple accounts, Vedox automatically falls back to the next account when one hits its usage limit.
+                  <a href="https://github.com/thepixelabs/altergo" target="_blank" rel="noopener noreferrer" class="ai-settings-link">Install AlterGo</a> to enable multi-account support. With multiple accounts, Vedox automatically falls back to the next account when one hits its usage limit.
                 {/if}
               </span>
             </div>
