@@ -1514,15 +1514,9 @@ These are explicitly deferred or out of scope:
 
 ---
 
-## 14. The Three Whys (CEO Test)
+## §14 — Migration Window
 
-Before proposing a change to this framework, answer:
-
-1. **Why does this rule exist?** If the answer is "consistency for its own sake," reject the rule.
-2. **Why is this rule mechanical?** If a human reviewer is faster than a linter, do not write a linter rule.
-3. **Why is this rule worth the writer's time?** A rule that costs the writer 5 minutes per document only earns its keep if it saves a reader more than 5 minutes per document, multiplied by the number of readers.
-
-A rule that fails any of the three is a candidate for removal in the next framework revision.
+All §14 entries migrated by VDX-P2-M on 2026-04-13.
 
 ---
 

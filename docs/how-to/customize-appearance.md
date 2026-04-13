@@ -6,6 +6,9 @@ date: 2026-04-10
 project: "vedox"
 tags: ["themes", "density", "appearance", "settings", "customization"]
 author: "tech-writer"
+difficulty: "beginner"
+estimated_time_minutes: 3
+prerequisites: []
 ---
 
 # Customize Appearance

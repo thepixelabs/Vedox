@@ -6,6 +6,11 @@ date: 2026-04-07
 project: "vedox"
 tags: ["api", "reference", "http", "endpoints", "templates"]
 author: "Vedox Team"
+difficulty: "intermediate"
+estimated_time_minutes: 15
+prerequisites:
+  - "vedox dev running at http://127.0.0.1:3001"
+  - "A project set up in Vedox for the service or SDK being documented"
 ---
 
 The API Reference template is for documenting any interface that a caller must understand to use correctly: an HTTP API, a CLI, or a programmatic SDK. It is structured for scanning, not reading — engineers arrive at a reference doc looking for one specific thing, and leave the moment they find it.

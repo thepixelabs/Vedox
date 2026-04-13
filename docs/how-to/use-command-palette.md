@@ -6,6 +6,10 @@ date: 2026-04-11
 project: "vedox"
 tags: ["flagship-ux", "command-palette", "search", "navigation", "shortcuts"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 5
+prerequisites:
+  - "vedox dev running with a project open"
 ---
 
 # How to use the command palette

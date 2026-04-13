@@ -6,6 +6,11 @@ date: 2026-04-11
 project: "vedox"
 tags: ["flagship-ux", "math", "katex", "latex", "editor"]
 author: "Vedox Team"
+difficulty: "intermediate"
+estimated_time_minutes: 5
+prerequisites:
+  - "A document open in the editor"
+  - "Familiarity with KaTeX-supported LaTeX syntax"
 ---
 
 # How to write math

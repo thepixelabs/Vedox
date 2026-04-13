@@ -6,6 +6,11 @@ date: 2026-04-07
 project: "vedox"
 tags: ["readme", "templates", "onboarding", "documentation"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 10
+prerequisites:
+  - "vedox dev running at http://127.0.0.1:3001"
+  - "A project set up in Vedox"
 ---
 
 The README template produces the front door of a project — the first thing a new engineer reads when they encounter a codebase. Its job is to answer three questions in under two minutes: what does this do, how do I run it, and how do I contribute?

@@ -6,6 +6,9 @@ date: 2026-04-10
 project: "vedox"
 tags: ["keyboard", "shortcuts", "navigation", "editor", "panes"]
 author: "tech-writer"
+difficulty: "beginner"
+estimated_time_minutes: 5
+prerequisites: []
 ---
 
 # Keyboard Shortcuts

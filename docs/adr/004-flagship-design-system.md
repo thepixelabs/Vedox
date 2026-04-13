@@ -3,6 +3,8 @@ title: "ADR-004: Flagship Design System — OKLCH Tokens, Named Themes, Variable
 type: adr
 status: accepted
 date: 2026-04-10
+decision_date: 2026-04-10
+deciders: ["pixelicous"]
 project: "vedox"
 tags: ["design-system", "theming", "oklch", "typography", "density", "css"]
 author: "Vedox Team"

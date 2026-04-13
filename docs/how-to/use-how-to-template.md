@@ -6,6 +6,11 @@ date: 2026-04-07
 project: "vedox"
 tags: ["how-to", "templates", "diataxis", "writing", "documentation"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 10
+prerequisites:
+  - "vedox dev running at http://127.0.0.1:3001"
+  - "A specific task you want to document"
 ---
 
 This document explains how to write a how-to guide using Vedox's how-to template. It is intentionally self-referential — a how-to about how-tos — so reading it is also a demonstration of the format.

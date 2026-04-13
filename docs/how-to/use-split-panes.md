@@ -6,6 +6,11 @@ date: 2026-04-11
 project: "vedox"
 tags: ["flagship-ux", "panes", "editor", "navigation"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 5
+prerequisites:
+  - "vedox dev running with a project open"
+  - "Viewport at least 1440px wide"
 ---
 
 # How to use split panes
