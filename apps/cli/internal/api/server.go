@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/scanner"
@@ -29,6 +30,14 @@ type Server struct {
 	// are registered dynamically via POST /api/link and persisted to
 	// .vedox/links.json so they survive restarts.
 	registry *store.ProjectRegistry
+
+	// requireAgent is the auth middleware applied to agent-only routes
+	// (POST /docs, POST /decisions — landing in VDX-P3-INGEST). It is set by
+	// NewServer from the KeyStore loaded at dev-server startup. Until
+	// ingestion routes exist, this field is unused on the hot path, but the
+	// server accepts it now so VDX-P3-INGEST can wire routes without having
+	// to retouch the server constructor.
+	requireAgent agentauth.Middleware
 }
 
 // NewServer constructs an API Server. workspaceRoot must be an absolute path;
@@ -37,7 +46,12 @@ type Server struct {
 // jobStore must be non-nil; use scanner.NewJobStore() if no existing store exists.
 // aiJobStore must be non-nil; use ai.NewJobStore(3) if no existing store exists.
 // registry must be non-nil; use store.NewProjectRegistry() if no registry exists.
-func NewServer(docStore store.DocStore, dbStore *db.Store, workspaceRoot string, jobStore *scanner.JobStore, aiJobStore *ai.JobStore, registry *store.ProjectRegistry) *Server {
+func NewServer(docStore store.DocStore, dbStore *db.Store, workspaceRoot string, jobStore *scanner.JobStore, aiJobStore *ai.JobStore, registry *store.ProjectRegistry, requireAgent agentauth.Middleware) *Server {
+	if requireAgent == nil {
+		// Fail-closed default: tests and callers that do not supply auth get
+		// a passthrough so wiring does not explode, but this is explicit.
+		requireAgent = agentauth.PassthroughAuth()
+	}
 	return &Server{
 		store:         docStore,
 		db:            dbStore,
@@ -45,6 +59,7 @@ func NewServer(docStore store.DocStore, dbStore *db.Store, workspaceRoot string,
 		jobStore:      jobStore,
 		aiJobStore:    aiJobStore,
 		registry:      registry,
+		requireAgent:  requireAgent,
 	}
 }
 
