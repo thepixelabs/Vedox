@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/api"
 	"github.com/vedox/vedox/internal/config"
@@ -134,12 +135,24 @@ func runDev(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// 5b. Load the agent API key store. The KeyStore wraps .vedox/agent-keys.json
+	// plus OS-keychain storage for HMAC secrets. We load at startup so any
+	// keychain or filesystem misconfiguration surfaces immediately instead of
+	// on the first agent request. RequireAgent is plumbed to the API server
+	// so VDX-P3-INGEST routes can opt into auth without touching wiring.
+	keyStore, err := agentauth.LoadKeyStore(cfg.Workspace)
+	if err != nil {
+		return fmt.Errorf("could not load agent key store: %w", err)
+	}
+	slog.Info("agent key store loaded", "keys", len(keyStore.ListKeys()))
+	requireAgent := agentauth.RequireAgent(keyStore)
+
 	// 6. Build the HTTP handler.
 	// SvelteKit Vite dev server runs on port 5151 and proxies /api/* to this
 	// Go server on port 5150. The Go server owns /api/*; SvelteKit owns everything else.
 	jobStore := scanner.NewJobStore()
 	aiJobStore := ai.NewJobStore(3)
-	mux := buildDevMux(cfg, adapter, dbStore, jobStore, aiJobStore, registry)
+	mux := buildDevMux(cfg, adapter, dbStore, jobStore, aiJobStore, registry, requireAgent)
 
 	srv := &http.Server{
 		Addr:         listenAddr,
@@ -166,10 +179,10 @@ func runDev(cmd *cobra.Command, args []string) error {
 //
 // SvelteKit Vite dev server proxies /api/* to this Go server on port 3001+1=3002
 // (or configurable offset). The Go server owns /api/*; SvelteKit owns everything else.
-func buildDevMux(cfg *config.Config, docStore store.DocStore, dbStore *db.Store, jobStore *scanner.JobStore, aiJobStore *ai.JobStore, registry *store.ProjectRegistry) *http.ServeMux {
+func buildDevMux(cfg *config.Config, docStore store.DocStore, dbStore *db.Store, jobStore *scanner.JobStore, aiJobStore *ai.JobStore, registry *store.ProjectRegistry, requireAgent agentauth.Middleware) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	apiServer := api.NewServer(docStore, dbStore, cfg.Workspace, jobStore, aiJobStore, registry)
+	apiServer := api.NewServer(docStore, dbStore, cfg.Workspace, jobStore, aiJobStore, registry, requireAgent)
 	apiServer.Mount(mux)
 
 	// Healthcheck endpoint. Used by process supervisors and the SvelteKit
