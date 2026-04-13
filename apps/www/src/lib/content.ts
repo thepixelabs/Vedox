@@ -25,7 +25,6 @@ export const nav = {
 		{ id: 'pillars', label: 'Why' },
 		{ id: 'editor', label: 'Editor' },
 		{ id: 'features', label: 'Features' },
-		{ id: 'compare', label: 'Compare' },
 		{ id: 'faq', label: 'FAQ' },
 		{ id: 'roadmap', label: 'Roadmap' },
 	],
