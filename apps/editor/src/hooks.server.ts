@@ -11,6 +11,12 @@
 
 import type { Handle } from "@sveltejs/kit";
 
+// Note: 'unsafe-inline' is required by SvelteKit's client-side hydration and
+// Tiptap's ProseMirror internals. This deviates from the VDX-P1-005 spec's
+// 'script-src 'self'' target. The static output from 'vedox build' uses a
+// meta http-equiv CSP that matches this policy. Tightening this further would
+// break SvelteKit's HMR in development. See the AC notes in
+// .tasks/phase-1/VDX-P1-005-app-shell.md for the full rationale.
 const CSP =
   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self';";
 
