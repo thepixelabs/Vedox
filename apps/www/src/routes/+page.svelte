@@ -45,7 +45,60 @@
 <FeatureGrid />
 <SocialProof />
 <Workflow />
-<FAQ />
-<Roadmap />
+
+<div class="skeptics-roadmap">
+	<img
+		class="brass-bleed"
+		src="/vedox-logo-07-brass-registry-rembg.png"
+		alt=""
+		aria-hidden="true"
+		loading="lazy"
+		decoding="async"
+		width="480"
+		height="480"
+	/>
+	<div class="sections-layer">
+		<FAQ />
+		<Roadmap />
+	</div>
+</div>
+
 <Waitlist />
+
+<style>
+	.skeptics-roadmap {
+		position: relative;
+		overflow: hidden;
+	}
+	.brass-bleed {
+		position: absolute;
+		right: -5%;
+		top: 42%;
+		transform: translateY(-50%);
+		width: min(38%, 480px);
+		height: auto;
+		opacity: 0.085;
+		mix-blend-mode: luminosity;
+		filter: grayscale(30%);
+		pointer-events: none;
+		user-select: none;
+		z-index: 0;
+	}
+	.sections-layer {
+		position: relative;
+		z-index: 1;
+	}
+	@media (max-width: 1023px) {
+		.brass-bleed {
+			width: min(45%, 360px);
+			opacity: 0.06;
+			right: -8%;
+		}
+	}
+	@media (max-width: 767px) {
+		.brass-bleed {
+			display: none;
+		}
+	}
+</style>
 
