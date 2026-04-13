@@ -6,6 +6,11 @@ date: 2026-04-11
 project: "vedox"
 tags: ["flagship-ux", "callouts", "markdown", "editor"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 3
+prerequisites:
+  - "A document open in either rich or source mode"
+  - "Familiarity with blockquote syntax"
 ---
 
 # How to add callouts

@@ -6,6 +6,10 @@ date: 2026-04-11
 project: "vedox"
 tags: ["flagship-ux", "status-bar", "breadcrumbs", "editor", "navigation"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 3
+prerequisites:
+  - "A document open in a pane"
 ---
 
 # How to read the status bar and breadcrumbs

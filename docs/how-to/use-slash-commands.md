@@ -6,6 +6,11 @@ date: 2026-04-11
 project: "vedox"
 tags: ["flagship-ux", "slash-commands", "editor", "blocks"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 3
+prerequisites:
+  - "A document open in a pane in rich (WYSIWYG) mode"
+  - "Cursor in an empty paragraph"
 ---
 
 # How to insert blocks with slash commands

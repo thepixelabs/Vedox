@@ -6,6 +6,11 @@ date: 2026-04-07
 project: "vedox"
 tags: ["runbook", "incident-response", "operations", "templates", "on-call"]
 author: "Vedox Team"
+difficulty: "intermediate"
+estimated_time_minutes: 15
+prerequisites:
+  - "vedox dev running at http://127.0.0.1:3001"
+  - "A documented incident pattern or recurring maintenance task to describe"
 ---
 
 A runbook is a documented procedure for responding to a specific operational event — an incident, a degradation, or a scheduled maintenance task. It is written for an engineer paged at 3am on their first week who needs to stop the bleeding without fully understanding the system.

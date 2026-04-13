@@ -6,6 +6,11 @@ date: 2026-04-07
 project: "vedox"
 tags: ["adr", "architecture", "decisions", "templates"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 10
+prerequisites:
+  - "vedox dev running at http://127.0.0.1:3001"
+  - "A project already exists in Vedox"
 ---
 
 An Architecture Decision Record (ADR) is a short document that captures a significant technical decision: what was decided, why, what alternatives were rejected, and what the consequences are. ADRs are the audit trail that keeps a team from relitigating the same decisions at every architecture review.

@@ -3,6 +3,8 @@ title: "ADR-001: Markdown as Source of Truth"
 type: adr
 status: accepted
 date: 2026-04-07
+decision_date: 2026-04-07
+deciders: ["pixelicous"]
 project: "vedox"
 tags: ["storage", "markdown", "sqlite", "portability", "architecture"]
 author: "Vedox Team"

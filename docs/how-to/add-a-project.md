@@ -6,6 +6,12 @@ date: 2026-04-07
 project: "vedox"
 tags: ["workspace", "project", "import", "symlink", "onboarding"]
 author: "Vedox Team"
+difficulty: "beginner"
+estimated_time_minutes: 5
+prerequisites:
+  - "vedox >= 0.1.0 installed"
+  - "vedox dev running at http://127.0.0.1:3001"
+  - "A local Git repository with at least one .md file"
 ---
 
 A how-to guide is task-oriented. It answers one question: how do I accomplish this specific thing? This guide covers adding a local Git repository to Vedox so its documentation appears in the sidebar. There are two paths depending on whether you want Vedox to own the files or read them in place.
