@@ -48,6 +48,25 @@
 </section>
 
 <style>
+	.roadmap {
+		position: relative;
+		overflow: hidden;
+		background:
+			radial-gradient(
+				700px 400px at 50% 110%,
+				color-mix(in srgb, var(--color-accent) 14%, transparent),
+				transparent 60%
+			),
+			radial-gradient(
+				400px 300px at 85% 20%,
+				color-mix(in srgb, var(--color-accent) 9%, transparent),
+				transparent 55%
+			);
+	}
+	.container {
+		position: relative;
+		z-index: 1;
+	}
 	.kicker {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-xs);

@@ -73,12 +73,24 @@
         <feGaussianBlur stdDeviation="60" />
       </filter>
     </defs>
-    <ellipse class="aurora-1" cx={`${30 + mx * 10}%`} cy={`${20 + my * 8}%`} rx="35%" ry="25%" fill="#818cf8" opacity="0.18" filter="url(#aurora-blur)" />
-    <ellipse class="aurora-2" cx="72%" cy="40%" rx="28%" ry="20%" fill="#a78bfa" opacity="0.12" filter="url(#aurora-blur)" />
-    <ellipse class="aurora-3" cx="50%" cy="-5%" rx="40%" ry="20%" fill="#34d399" opacity="0.06" filter="url(#aurora-blur)" />
+    <ellipse class="aurora-1" cx={`${30 + mx * 10}%`} cy={`${20 + my * 8}%`} rx="35%" ry="25%" fill="#818cf8" opacity="0.22" filter="url(#aurora-blur)" />
+    <ellipse class="aurora-2" cx="72%" cy="40%" rx="28%" ry="20%" fill="#a78bfa" opacity="0.18" filter="url(#aurora-blur)" />
+    <ellipse class="aurora-3" cx="50%" cy="-5%" rx="40%" ry="20%" fill="#34d399" opacity="0.10" filter="url(#aurora-blur)" />
   </svg>
 
   <div class="hero-noise" aria-hidden="true"></div>
+
+  <!-- Split-folio — prominent atmospheric book behind the hero content -->
+  <div class="folio-bg" aria-hidden="true">
+    <img
+      src="/vedox-logo-09-split-folio-rembg.png"
+      alt=""
+      loading="eager"
+      decoding="async"
+    />
+    <!-- Soft gradient fade at the bottom edge so the book blends into the section -->
+    <div class="folio-fade"></div>
+  </div>
 
   <div class="container hero-inner">
     <p class="eyebrow"><span class="eyebrow-path">{hero.eyebrow}</span></p>
@@ -340,6 +352,8 @@
     .aurora-2,
     .aurora-3 {
       animation: none;
+      /* Freeze at mid-cycle transform — don't strip to 0 */
+      transform: translate(2%, 1.5%) scale(1.04);
     }
   }
   .hero-noise {
@@ -356,6 +370,52 @@
   :global([data-theme='dark']) .hero-noise {
     opacity: 0.07;
   }
+  /* ---- Split-folio background ---- */
+  .folio-bg {
+    position: absolute;
+    /* Anchor right side; wide enough to be prominent without blocking the headline */
+    right: -4%;
+    top: 0;
+    bottom: 0;
+    width: 58%;
+    pointer-events: none;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    opacity: 0.20;
+  }
+  .folio-bg img {
+    width: 100%;
+    height: 85%;
+    object-fit: contain;
+    object-position: center right;
+    max-width: none;
+    mix-blend-mode: normal;
+  }
+  /* Bottom fade — blends the book into the section boundary */
+  .folio-fade {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 30%;
+    background: linear-gradient(to top, var(--color-surface-base, #0a0a0a), transparent);
+    pointer-events: none;
+  }
+  /* On mobile the book is too wide — hide it so text stays readable */
+  @media (max-width: 768px) {
+    .folio-bg {
+      display: none;
+    }
+  }
+  /* On tablet, pull opacity down slightly so it doesn't crowd the headline */
+  @media (min-width: 769px) and (max-width: 1024px) {
+    .folio-bg {
+      opacity: 0.13;
+    }
+  }
+
   .hero-inner {
     position: relative;
     z-index: 1;
@@ -450,13 +510,18 @@
 
   /* ── App frame ──────────────────────────────────────────────── */
   .mock-frame {
-    border: 1px solid var(--color-border);
+    border: 1px solid rgba(129, 140, 248, 0.2);
     border-radius: var(--radius-xl);
     overflow: hidden;
-    background: var(--color-surface-elevated);
+    /* Glass layer — lets the folio book bleed through from behind */
+    background: rgba(11, 11, 14, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     box-shadow:
+      0 0 80px -20px rgba(129, 140, 248, 0.25),
+      0 0 140px -40px rgba(129, 140, 248, 0.15),
       0 24px 80px color-mix(in srgb, var(--color-accent) 18%, transparent),
-      0 8px 24px rgba(0, 0, 0, 0.12);
+      0 8px 24px rgba(0, 0, 0, 0.24);
     text-align: left;
     position: relative;
     min-height: 520px;
@@ -495,8 +560,8 @@
     align-items: center;
     height: 36px;
     padding: 0 var(--space-4);
-    background: var(--color-surface-overlay);
-    border-bottom: 1px solid var(--color-border);
+    background: rgba(22, 22, 28, 0.78);
+    border-bottom: 1px solid rgba(129, 140, 248, 0.12);
     flex-shrink: 0;
     gap: var(--space-3);
   }
@@ -539,8 +604,8 @@
   .mock-activity {
     width: 40px;
     flex-shrink: 0;
-    background: var(--color-surface-overlay);
-    border-right: 1px solid var(--color-border);
+    background: rgba(22, 22, 28, 0.76);
+    border-right: 1px solid rgba(129, 140, 248, 0.1);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -572,8 +637,8 @@
   .mock-sidebar {
     width: 200px;
     flex-shrink: 0;
-    background: var(--color-surface-base);
-    border-right: 1px solid var(--color-border);
+    background: rgba(11, 11, 14, 0.74);
+    border-right: 1px solid rgba(129, 140, 248, 0.1);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -659,7 +724,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: var(--color-surface-elevated);
+    background: rgba(16, 16, 20, 0.72);
     overflow: hidden;
     min-width: 0;
   }
@@ -669,8 +734,8 @@
     display: flex;
     align-items: stretch;
     height: 36px;
-    background: var(--color-surface-base);
-    border-bottom: 1px solid var(--color-border);
+    background: rgba(11, 11, 14, 0.7);
+    border-bottom: 1px solid rgba(129, 140, 248, 0.1);
     flex-shrink: 0;
     justify-content: space-between;
   }
@@ -694,7 +759,7 @@
   }
   .mock-tab.active {
     color: var(--color-text-primary);
-    background: var(--color-surface-elevated);
+    background: rgba(16, 16, 20, 0.72);
     border-bottom-color: var(--color-accent);
   }
   .mock-tab-close {
@@ -872,8 +937,8 @@
     justify-content: space-between;
     height: 28px;
     padding: 0 var(--space-4);
-    background: var(--color-surface-overlay);
-    border-top: 1px solid var(--color-border);
+    background: rgba(22, 22, 28, 0.78);
+    border-top: 1px solid rgba(129, 140, 248, 0.1);
     flex-shrink: 0;
     gap: var(--space-4);
   }

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/www/static/pixelabs-icon.png" width="80" alt="Pixelabs" />
+  <img src="apps/www/static/vedox-logo-01-fossil-record-rembg.png" width="80" alt="Vedox" />
 </p>
 
 <h3 align="center"><strong>Vedox</strong></h3>

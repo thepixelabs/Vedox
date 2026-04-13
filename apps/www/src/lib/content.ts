@@ -131,7 +131,7 @@ export const features = {
 			items: [
 				{
 					title: 'Dual-mode WYSIWYG',
-					body: 'Tiptap on one side, CodeMirror 6 on the other. switch mid-sentence.',
+					body: 'two editors, one file. Tiptap renders prose the way it will look; CodeMirror 6 gives you raw Markdown when you want control. switch modes mid-sentence with no conversion step, no reformatting, no surprises.',
 				},
 				{
 					title: 'Round-trip fidelity',
@@ -151,7 +151,7 @@ export const features = {
 				},
 				{
 					title: 'Auto-save',
-					body: '800ms debounce. every edit is persisted. "Publish" means git commit with a customizable message.',
+					body: 'every edit is written to disk within 800ms of your last keystroke. "Publish" in vedox is `git commit` with a message you write. there is no cloud save, no sync button, no unsaved state.',
 				},
 			],
 		},
@@ -187,15 +187,15 @@ export const features = {
 				},
 				{
 					title: '3 density modes',
-					body: 'Compact, Comfortable, Cozy. a single multiplier scales all spacing to match your screen.',
+					body: 'Compact / Comfortable / Cozy. one CSS multiplier scales every margin, padding, and gap uniformly. set it once per workspace, forget it.',
 				},
 				{
 					title: 'Variable fonts',
-					body: 'Geist Sans, Fraunces, JetBrains Mono. self-hosted woff2 with metric-override FOUT prevention.',
+					body: 'three purpose-chosen typefaces — prose, display, code — loaded from your local binary. no Google Fonts CDN call, no FOUT, no web font flash. each one tuned for documentation reading at your screen density.',
 				},
 				{
 					title: 'Motion system',
-					body: '3 durations, 4 easing curves. `prefers-reduced-motion` kills all animation automatically.',
+					body: 'all animation is purposeful and systematized — 3 durations, 4 curves — not ad hoc. if your OS is set to reduce motion, vedox animates nothing. no exceptions.',
 				},
 			],
 		},
@@ -227,7 +227,7 @@ export const features = {
 				},
 				{
 					title: 'Zero config start',
-					body: 'run `vedox dev` in any folder with markdown. framework detection handles the rest.',
+					body: 'run `vedox dev`. vedox scans the current folder, detects your doc structure, and opens the editor. no config file, no project init, no schema to define. if there is Markdown, it works.',
 				},
 				{
 					title: '5 document templates',
@@ -239,7 +239,7 @@ export const features = {
 				},
 				{
 					title: 'Workspace scanner',
-					body: 'detects Astro, MkDocs, Jekyll, Docusaurus, or bare README on first scan. no import wizard.',
+					body: 'point vedox at a repo containing Astro, MkDocs, Jekyll, or Docusaurus — or just a folder of Markdown — and it figures out the structure on first scan. no config file, no import wizard, no "what framework are you using?" dialog.',
 				},
 				{
 					title: 'Locked down by default',
@@ -331,17 +331,17 @@ export const workflow = {
 		{
 			n: '01',
 			title: 'point vedox at a repo',
-			body: 'run `vedox dev` in any folder that contains markdown. vedox scans, indexes, and opens a local editor. no config file required.',
+			body: 'run `vedox dev` in any folder that has Markdown. vedox scans, indexes your corpus into SQLite, and opens the editor at localhost in under a second. no config file, no project init, no "where are my docs?" wizard.',
 		},
 		{
 			n: '02',
 			title: 'edit in vedox',
-			body: 'write, reorganize, link, and search across every doc from a fast local UI. nothing leaves your machine.',
+			body: 'write prose or raw Markdown — switch modes without reformatting. search across your entire corpus instantly. link between files. reorganize structure by moving files. every edit writes directly to disk. nothing leaves your machine, ever.',
 		},
 		{
 			n: '03',
 			title: 'commit like normal',
-			body: '`git status`. `git diff`. `git commit`. the files on disk are the files vedox edited \u2014 no hidden state, no cache to flush, no export step.',
+			body: '`git diff` shows exactly what changed. `git commit` is your publish action. vedox has no hidden state — no internal database to flush, no export format to convert, no sync to wait for. the files on disk are the files. always.',
 		},
 	],
 } as const;

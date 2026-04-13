@@ -34,7 +34,35 @@
 </script>
 
 <section id={editor.id} class="showcase">
-  <div class="container">
+  <!-- Desktop/iPad split: CRT image in left column, content in right column -->
+  <div class="section-bg" aria-hidden="true">
+    <!-- Indigo-violet radial backdrop: the CRT as light source in a dark room -->
+    <div class="bg-glow"></div>
+    <!-- 3 static diagonal god-ray slivers at very low opacity -->
+    <div class="beam beam-1"></div>
+    <div class="beam beam-2"></div>
+    <div class="beam beam-3"></div>
+    <!-- The CRT image itself with slow spring breath animation -->
+    <div class="bg-perspective">
+      <img
+        src="/vedox-logo-08-neon-manuscript-terminal-v3-rembg.png"
+        alt=""
+        class="bg-img"
+        loading="lazy"
+        decoding="async"
+      />
+    </div>
+  </div>
+
+  <!-- Aurora ellipse: light spill from CRT screen upward (desktop + iPad only) -->
+  <svg class="crt-aurora" aria-hidden="true">
+    <defs>
+      <filter id="crt-aurora-blur"><feGaussianBlur stdDeviation="55"/></filter>
+    </defs>
+    <ellipse class="crt-aurora-e1" cx="80%" cy="15%" rx="40%" ry="20%" fill="#a78bfa" opacity="0.16" filter="url(#crt-aurora-blur)"/>
+  </svg>
+
+  <div class="content container">
     <p class="kicker" use:reveal>{editor.kicker}</p>
     <h2 use:reveal={{ delay: 60 }}>{editor.title}</h2>
     <p class="lede" use:reveal={{ delay: 120 }}>{editor.body}</p>
@@ -206,6 +234,202 @@
 </section>
 
 <style>
+  /* ---- Desktop grid: CRT image left, content right ---- */
+  .showcase {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(360px, 520px) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-10);
+    min-height: 640px;
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: var(--mkt-section-pad) var(--space-6);
+  }
+
+  /* ---- Background: neon manuscript CRT atmospheric layer ---- */
+  /* Positioned as grid child so it respects the column cap */
+  .section-bg {
+    position: relative;
+    grid-column: 1;
+    grid-row: 1;
+    align-self: stretch;
+    pointer-events: none;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.55;
+  }
+
+  /* Indigo-violet radial glow — emerges from darkness behind the CRT */
+  .bg-glow {
+    position: absolute;
+    inset: -30% -20%;
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      rgba(155, 127, 232, 0.28) 0%,
+      rgba(155, 127, 232, 0.10) 38%,
+      transparent 68%
+    );
+    pointer-events: none;
+  }
+
+  /* Static god-ray slivers — barely visible diagonal atmosphere */
+  .beam {
+    position: absolute;
+    pointer-events: none;
+    width: 90px;
+    height: 340px;
+    filter: blur(26px);
+    transform-origin: bottom center;
+  }
+  .beam-1 {
+    left: calc(50% - 10px);
+    bottom: 45%;
+    transform: rotate(-16deg);
+    background: linear-gradient(to top, rgba(155, 127, 232, 0.08), transparent 70%);
+  }
+  .beam-2 {
+    left: calc(50% + 40px);
+    bottom: 45%;
+    transform: rotate(10deg);
+    background: linear-gradient(to top, rgba(120, 180, 232, 0.06), transparent 70%);
+  }
+  .beam-3 {
+    left: calc(50% - 80px);
+    bottom: 45%;
+    transform: rotate(-8deg);
+    background: linear-gradient(to top, rgba(155, 127, 232, 0.06), transparent 65%);
+  }
+
+  /* Perspective wrapper for 3D spring breath on the background image */
+  .bg-perspective {
+    perspective: 1200px;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  @keyframes crt-bg-breathe {
+    0%   { transform: rotateX(-2deg) translateY(0px); }
+    50%  { transform: rotateX(2deg)  translateY(-2px); }
+    100% { transform: rotateX(-2deg) translateY(0px); }
+  }
+
+  .bg-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: none;
+    object-fit: contain;
+    object-position: right center;
+    /* screen blend: CRT glow punches through dark backgrounds */
+    mix-blend-mode: screen;
+    transform-style: preserve-3d;
+    animation: crt-bg-breathe 7s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+    animation-delay: -12s;
+  }
+
+  /* Light mode override: screen blend causes blowout on white */
+  @media (prefers-color-scheme: light) {
+    .bg-img {
+      mix-blend-mode: luminosity;
+      opacity: 0.20;
+    }
+  }
+  :global([data-theme='light']) .bg-img {
+    mix-blend-mode: luminosity;
+    opacity: 0.20;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bg-img {
+      animation: none;
+      /* Freeze at mid-cycle */
+      transform: rotateX(0deg) translateY(-1px);
+    }
+    .beam {
+      display: none;
+    }
+  }
+
+  /* ---- CRT aurora (desktop + iPad only) ---- */
+  .crt-aurora {
+    position: absolute;
+    inset: -10% -5%;
+    width: 110%;
+    height: 120%;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .crt-aurora-e1 {
+    animation: crt-aurora-drift 30s ease-in-out infinite alternate;
+    animation-delay: -12s;
+  }
+  @keyframes crt-aurora-drift {
+    from { transform: translate(0, 0) scale(1); }
+    to   { transform: translate(-3%, 2%) scale(1.05); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .crt-aurora-e1 {
+      animation: none;
+      transform: translate(-1.5%, 1%) scale(1.025);
+    }
+  }
+  @media (max-width: 767px) {
+    .crt-aurora {
+      display: none;
+    }
+  }
+
+  /* All foreground content sits in grid column 2 */
+  .content {
+    position: relative;
+    z-index: 1;
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 720px;
+    padding: 0;
+  }
+
+  /* ---- iPad: tighter grid, CRT still visible ---- */
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .showcase {
+      grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+      gap: var(--space-6);
+      min-height: 560px;
+    }
+    .bg-perspective {
+      max-width: 340px;
+    }
+    .section-bg {
+      opacity: 0.42;
+    }
+  }
+
+  /* ---- Mobile: collapse grid, hide image ---- */
+  @media (max-width: 767px) {
+    .showcase {
+      display: block;
+      min-height: auto;
+      padding: var(--mkt-section-pad) var(--space-5);
+      max-width: 100%;
+    }
+    .section-bg {
+      display: none;
+    }
+    .content {
+      max-width: 100%;
+    }
+  }
+
+  /* ---- Typography ---- */
   .kicker {
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
@@ -231,6 +455,8 @@
     margin-bottom: var(--space-3);
     letter-spacing: 0.06em;
   }
+
+  /* ---- Editor frame ---- */
   .frame {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-xl);
@@ -300,6 +526,8 @@
   /* ---- WYSIWYG pane ---- */
   .wys {
     padding: var(--space-8);
+    position: relative;
+    overflow: hidden;
   }
   .wys h3 {
     font-size: var(--font-size-2xl);
@@ -324,6 +552,7 @@
   .src-pane {
     padding: 0;
     overflow-x: auto;
+    position: relative;
   }
   .src {
     display: grid;

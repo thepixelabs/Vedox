@@ -140,26 +140,26 @@
     overflow: hidden;
     background:
       radial-gradient(
-        900px 500px at 50% 100%,
-        color-mix(in srgb, var(--color-accent) 14%, transparent),
+        1100px 600px at 50% 100%,
+        color-mix(in srgb, var(--color-accent) 18%, transparent),
         transparent 65%
       ),
       radial-gradient(
         600px 400px at 20% 60%,
-        color-mix(in srgb, var(--color-accent) 8%, transparent),
+        color-mix(in srgb, var(--color-accent) 11%, transparent),
         transparent 60%
       ),
       radial-gradient(
         500px 300px at 80% 40%,
-        color-mix(in srgb, var(--color-accent) 6%, transparent),
+        color-mix(in srgb, var(--color-accent) 8%, transparent),
         transparent 60%
       );
   }
-  /* Shimmer lines */
+  /* Shimmer lines — wider, slightly blurred for volumetric feel */
   .shimmer-line {
     position: absolute;
     top: -100%;
-    width: 1px;
+    width: 1.5px;
     height: 100%;
     background: linear-gradient(
       to bottom,
@@ -167,7 +167,8 @@
       var(--color-accent),
       transparent
     );
-    opacity: 0.25;
+    opacity: 0.38;
+    filter: blur(0.5px);
     pointer-events: none;
   }
   .shimmer-1 {
@@ -184,8 +185,8 @@
   }
   @keyframes shimmer-fall {
     0% { transform: translateY(0); opacity: 0; }
-    10% { opacity: 0.25; }
-    90% { opacity: 0.25; }
+    10% { opacity: 0.38; }
+    90% { opacity: 0.38; }
     100% { transform: translateY(200%); opacity: 0; }
   }
   @media (prefers-reduced-motion: reduce) {
