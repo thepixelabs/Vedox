@@ -213,6 +213,23 @@
   --error:   oklch(70% 0.18 25);
   --info:    oklch(72% 0.14 230);
 
+  /* ---- Provider brand accents (VDX-PD3-FE) ------------------------------- *
+   * Used by the multi-provider config drawer to distinguish Claude / Codex /
+   * Gemini at a glance. The *-subtle variants are tinted surfaces suitable
+   * for filled pill backgrounds; the *-border variant drives selection state.
+   */
+  --provider-claude:        oklch(70% 0.16 250);
+  --provider-claude-subtle: oklch(70% 0.16 250 / 0.14);
+  --provider-claude-border: oklch(50% 0.14 250);
+
+  --provider-codex:         oklch(74% 0.16 155);
+  --provider-codex-subtle:  oklch(74% 0.16 155 / 0.14);
+  --provider-codex-border:  oklch(54% 0.14 155);
+
+  --provider-gemini:        oklch(72% 0.17 310);
+  --provider-gemini-subtle: oklch(72% 0.17 310 / 0.14);
+  --provider-gemini-border: oklch(52% 0.15 310);
+
   /* ---- Single overlay shadow --------------------------------------------- */
   --shadow-overlay:
     0 0 0 1px oklch(34% 0.012 265 / 0.6),
