@@ -18,7 +18,6 @@
 	<meta name="description" content={seo.description} />
 	<meta name="keywords" content={seo.keywords.join(', ')} />
 	<link rel="canonical" href={site.url} />
-	<link rel="icon" type="image/png" href="/vedox-logo-01-fossil-record-rembg.png" />
 
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={site.url} />
