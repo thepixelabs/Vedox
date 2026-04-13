@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -38,6 +39,25 @@ type Server struct {
 	// server accepts it now so VDX-P3-INGEST can wire routes without having
 	// to retouch the server constructor.
 	requireAgent agentauth.Middleware
+
+	// homeDirOverride, if non-empty, replaces os.UserHomeDir() when resolving
+	// user-global provider config paths (e.g. ~/.codex/config.toml). Production
+	// code leaves this empty; tests set it to a t.TempDir() for isolation.
+	homeDirOverride string
+}
+
+// SetHomeDirOverride replaces the home directory used for user-global provider
+// config paths. Tests only — production code must not call this.
+func (s *Server) SetHomeDirOverride(home string) {
+	s.homeDirOverride = home
+}
+
+// userHome returns homeDirOverride when set, otherwise os.UserHomeDir().
+func (s *Server) userHome() (string, error) {
+	if s.homeDirOverride != "" {
+		return s.homeDirOverride, nil
+	}
+	return os.UserHomeDir()
 }
 
 // NewServer constructs an API Server. workspaceRoot must be an absolute path;
@@ -154,6 +174,23 @@ func (s *Server) Mount(mux *http.ServeMux) {
 
 		// Delete both the committed file and any draft.
 		dr.Delete("/*", s.handleDeleteDoc)
+	})
+
+	// AI provider config — manage Claude Code config, Codex global config.
+	r.Route("/api/projects/{project}/providers", func(pr chi.Router) {
+		pr.Get("/claude", s.handleGetClaudeConfig)
+		pr.Put("/claude/memory", s.handlePutClaudeMemory)
+		pr.Put("/claude/permissions", s.handlePutClaudePermissions)
+		pr.Get("/claude/mcp", s.handleGetClaudeMCP)
+		pr.Put("/claude/mcp", s.handlePutClaudeMCP)
+		pr.Get("/claude/agents", s.handleListAgents)
+		pr.Post("/claude/agents", s.handleCreateAgent)
+		pr.Get("/claude/agents/{filename}", s.handleGetAgent)
+		pr.Put("/claude/agents/{filename}", s.handlePutAgent)
+		pr.Delete("/claude/agents/{filename}", s.handleDeleteAgent)
+		pr.Get("/codex", s.handleGetCodexConfig)
+		pr.Put("/codex/mcp", s.handlePutCodexMCP)
+		pr.Put("/codex/settings", s.handlePutCodexSettings)
 	})
 
 	// Mount the chi router under /api/ on the stdlib mux. Everything that

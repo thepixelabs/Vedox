@@ -14,6 +14,7 @@
   import { api, ApiError, type Doc } from "$lib/api/client";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import TaskBacklog from "$lib/components/TaskBacklog.svelte";
+  import ProviderDrawer from "$lib/components/ProviderDrawer.svelte";
 
   const projectId = $derived(($page.params as Record<string, string>)["project"]);
   const project = $derived($projectsStore.find((p) => p.id === projectId) ?? null);
@@ -30,6 +31,9 @@
 
   // Task count — fed back from the TaskBacklog component via bind:taskCount
   let taskCount: number = $state(0);
+
+  // Provider config drawer (VDX-PD3-FE)
+  let providerDrawerOpen: boolean = $state(false);
 
   onMount(async () => {
     if (!projectId) return;
@@ -95,6 +99,18 @@
     <header class="project-home__header">
       <div class="project-home__header-row">
         <h1 class="project-home__title">{project.name}</h1>
+        <button
+          type="button"
+          class="project-home__config-btn"
+          onclick={() => (providerDrawerOpen = true)}
+          aria-label="Open provider config"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          Config
+        </button>
       </div>
       <p class="project-home__meta">
         <span class="project-home__meta-item">
@@ -176,6 +192,11 @@
       </h2>
       <TaskBacklog project={projectId} bind:taskCount />
     </section>
+    <ProviderDrawer
+      project={projectId}
+      open={providerDrawerOpen}
+      onclose={() => (providerDrawerOpen = false)}
+    />
   {:else}
     <div class="project-home__not-found">
       <h1>Project not found</h1>
@@ -204,6 +225,30 @@
   /* Override title margin when inside the row */
   .project-home__header-row .project-home__title {
     margin-bottom: 0;
+  }
+
+  .project-home__config-btn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    font-family: var(--font-body, inherit);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: border-color 80ms, color 80ms, background-color 80ms;
+  }
+  .project-home__config-btn:hover {
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+  }
+  .project-home__config-btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
 
   .project-home__title {

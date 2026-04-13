@@ -195,6 +195,45 @@ export interface GenerationJob {
 }
 
 // ---------------------------------------------------------------------------
+// Provider drawer types (VDX-PD3-FE)
+// ---------------------------------------------------------------------------
+
+export type DetectedProviderId = 'claude' | 'gemini' | 'codex';
+
+export interface DetectedProvider {
+  id: DetectedProviderId;
+  name: string;
+  available: boolean;
+  scope: 'project' | 'global';
+}
+
+export interface ClaudeConfig {
+  memory: { content: string; etag: string };
+  permissions: { raw: Record<string, unknown>; etag: string };
+  scope: 'project';
+}
+
+export interface CodexConfig {
+  mcp: { servers: Record<string, unknown>; etag: string };
+  approvalMode: string;
+  sandbox: string;
+  configEtag: string;
+  scope: 'global';
+}
+
+export interface AgentSummary {
+  filename: string;
+  name: string;
+  description: string;
+  version: string;
+}
+
+export interface AgentDetail extends AgentSummary {
+  body: string;
+  etag: string;
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -237,6 +276,20 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) throw await parseApiError(res);
   // 204 No Content has no body — return undefined cast to T.
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await parseApiError(res);
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
@@ -474,5 +527,137 @@ export const api = {
    */
   getGenerationJob(jobId: string): Promise<GenerationJob> {
     return get<GenerationJob>(`/api/ai/generate-names/${encodeURIComponent(jobId)}`);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Provider drawer (VDX-PD3-FE)
+  //
+  // The dedicated /providers registry endpoint is deferred. Until it ships we
+  // probe each per-provider root in parallel: any 2xx counts as "available".
+  // ---------------------------------------------------------------------------
+
+  async getProviders(project: string): Promise<DetectedProvider[]> {
+    const base = `/api/projects/${encodeURIComponent(project)}/providers`;
+    const probe = async (id: DetectedProviderId): Promise<boolean> => {
+      try {
+        const res = await fetch(`${base}/${id}`, { headers: { Accept: 'application/json' } });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    };
+    const [claude, codex, gemini] = await Promise.all([
+      probe('claude'),
+      probe('codex'),
+      probe('gemini'),
+    ]);
+    return [
+      { id: 'claude', name: 'Claude Code', available: claude, scope: 'project' },
+      { id: 'codex',  name: 'Codex',       available: codex,  scope: 'global' },
+      { id: 'gemini', name: 'Gemini',      available: gemini, scope: 'project' },
+    ];
+  },
+
+  getClaudeConfig(project: string): Promise<ClaudeConfig> {
+    return get<ClaudeConfig>(`/api/projects/${encodeURIComponent(project)}/providers/claude`);
+  },
+
+  putClaudeMemory(project: string, content: string, etag: string): Promise<{ etag: string }> {
+    return put<{ etag: string }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/memory`,
+      { content, etag },
+    );
+  },
+
+  putClaudePermissions(
+    project: string,
+    permissions: Record<string, unknown>,
+    etag: string,
+  ): Promise<{ etag: string }> {
+    return put<{ etag: string }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/permissions`,
+      { permissions, etag },
+    );
+  },
+
+  getClaudeMCP(project: string): Promise<{ servers: Record<string, unknown>; etag: string }> {
+    return get<{ servers: Record<string, unknown>; etag: string }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/mcp`,
+    );
+  },
+
+  putClaudeMCP(
+    project: string,
+    servers: Record<string, unknown>,
+    etag: string,
+  ): Promise<{ etag: string }> {
+    return put<{ etag: string }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/mcp`,
+      { servers, etag },
+    );
+  },
+
+  listAgents(project: string): Promise<{ agents: AgentSummary[] }> {
+    return get<{ agents: AgentSummary[] }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/agents`,
+    );
+  },
+
+  getAgent(project: string, filename: string): Promise<AgentDetail> {
+    return get<AgentDetail>(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/agents/${encodeURIComponent(filename)}`,
+    );
+  },
+
+  createAgent(
+    project: string,
+    agent: Omit<AgentDetail, 'etag'>,
+  ): Promise<{ filename: string; etag: string }> {
+    return post<{ filename: string; etag: string }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/agents`,
+      agent,
+    );
+  },
+
+  putAgent(
+    project: string,
+    filename: string,
+    agent: Omit<AgentDetail, 'filename'> & { etag: string },
+  ): Promise<{ etag: string }> {
+    return put<{ etag: string }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/agents/${encodeURIComponent(filename)}`,
+      agent,
+    );
+  },
+
+  deleteAgent(project: string, filename: string): Promise<void> {
+    return del(
+      `/api/projects/${encodeURIComponent(project)}/providers/claude/agents/${encodeURIComponent(filename)}`,
+    );
+  },
+
+  getCodexConfig(project: string): Promise<CodexConfig> {
+    return get<CodexConfig>(`/api/projects/${encodeURIComponent(project)}/providers/codex`);
+  },
+
+  putCodexMCP(
+    project: string,
+    servers: Record<string, unknown>,
+    etag: string,
+  ): Promise<{ etag: string }> {
+    return put<{ etag: string }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/codex/mcp`,
+      { servers, etag },
+    );
+  },
+
+  putCodexSettings(
+    project: string,
+    settings: { approvalMode?: string; sandbox?: string; etag: string },
+  ): Promise<{ etag: string }> {
+    return put<{ etag: string }>(
+      `/api/projects/${encodeURIComponent(project)}/providers/codex/settings`,
+      settings,
+    );
   },
 };
