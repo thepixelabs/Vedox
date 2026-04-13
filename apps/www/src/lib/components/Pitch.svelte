@@ -76,6 +76,15 @@
 </script>
 
 <section id={pitch.id} class="pitch">
+  <!-- Terminal hearth — atmospheric CRT warmth on the right, desktop only -->
+  <div class="section-bg" aria-hidden="true">
+    <img
+      src="/vedox-logo-10-terminal-hearth-rembg.png"
+      alt=""
+      loading="lazy"
+      decoding="async"
+    />
+  </div>
   <div class="container grid">
     <div class="copy">
       <p class="kicker" use:reveal>{pitch.kicker}</p>
@@ -101,6 +110,38 @@
     padding-top: var(--mkt-section-pad);
     position: relative;
     overflow: hidden;
+  }
+  /* Terminal hearth — left side behind copy column, CRT screen faces inward */
+  .section-bg {
+    position: absolute;
+    left: -6%;
+    top: 0;
+    bottom: 0;
+    width: 44%;
+    pointer-events: none;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    opacity: 0.09;
+  }
+  .section-bg img {
+    width: 100%;
+    height: auto;
+    max-width: none;
+    object-fit: contain;
+    object-position: right center;
+    mix-blend-mode: luminosity;
+  }
+  @media (min-width: 769px) and (max-width: 1024px) {
+    .section-bg {
+      opacity: 0.06;
+    }
+  }
+  @media (max-width: 768px) {
+    .section-bg {
+      display: none;
+    }
   }
   /* Subtle engineering grid */
   .pitch::before {

@@ -76,15 +76,6 @@
 </script>
 
 <section id={faq.id} class="faq">
-  <!-- Cartographers repo — bottom-right atmospheric texture -->
-  <img
-    class="faq-bg-img"
-    src="/vedox-logo-06-cartographers-repo-final.png"
-    alt=""
-    aria-hidden="true"
-    loading="lazy"
-    decoding="async"
-  />
   <!-- Aurora ellipse — upper-left complementary light -->
   <svg class="faq-aurora" aria-hidden="true">
     <defs>
@@ -134,30 +125,6 @@
   .faq {
     position: relative;
     overflow: hidden;
-  }
-  /* Cartographers repo — bottom-right corner, object facing inward */
-  .faq-bg-img {
-    position: absolute;
-    right: -8%;
-    bottom: -10%;
-    width: 55%;
-    height: auto;
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.07;
-    object-fit: contain;
-    object-position: right bottom;
-    mix-blend-mode: luminosity;
-  }
-  @media (min-width: 768px) and (max-width: 1023px) {
-    .faq-bg-img {
-      opacity: 0.04;
-    }
-  }
-  @media (max-width: 767px) {
-    .faq-bg-img {
-      display: none;
-    }
   }
   /* Aurora — upper-left */
   .faq-aurora {

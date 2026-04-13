@@ -23,24 +23,30 @@
 	}
 </script>
 
-<button
-	type="button"
-	class="cmd"
-	onclick={copy}
-	aria-label="Copy install command to clipboard"
->
-	<span class="prompt" aria-hidden="true">$</span>
-	<code>{site.installCommand}</code>
-	<span class="badge" aria-live="polite">
-		{#if copied}
-			Copied
-		{:else}
-			Copy
-		{/if}
-	</span>
-</button>
+<div class="cmd-wrapper">
+	<button
+		type="button"
+		class="cmd"
+		onclick={copy}
+		aria-label="Copy install command to clipboard"
+	>
+		<span class="prompt" aria-hidden="true">$</span>
+		<code>{site.installCommand}</code>
+		<span class="badge" aria-live="polite">
+			{#if copied}
+				Copied
+			{:else}
+				Copy
+			{/if}
+		</span>
+	</button>
+</div>
 
 <style>
+	.cmd-wrapper {
+		display: inline-flex;
+		align-items: center;
+	}
 	.cmd {
 		display: inline-flex;
 		align-items: center;
