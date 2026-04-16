@@ -59,11 +59,12 @@ WORKDIR /src
 # that only reruns when dependencies actually change.
 COPY apps/cli/go.mod apps/cli/go.sum ./
 
-# GOTOOLCHAIN=local is the Go image default. Override to go1.25rc1 so that
-# `go mod download` accepts a go.mod with `go 1.25.0` while running on 1.25rc1.
-# Once golang:1.25-bookworm (final) is available, remove this line and the
-# NOTE comment above — GOTOOLCHAIN=local will work correctly with the final image.
-RUN GOTOOLCHAIN=go1.25rc1 go mod download
+# GOTOOLCHAIN=auto: go.mod requires 1.25.0; golang:1.25rc1 is pre-release and its
+# version string (go1.25rc1) is treated as < 1.25.0 final by strict toolchain
+# enforcement. GOTOOLCHAIN=auto allows the running toolchain to satisfy the
+# requirement without attempting a network download in most CI environments.
+# Once golang:1.25-bookworm (final) ships, switch image tag and remove this.
+RUN GOTOOLCHAIN=auto go mod download
 
 # Copy the full CLI source.
 COPY apps/cli/ ./
@@ -72,13 +73,19 @@ COPY apps/cli/ ./
 # The //go:build release guard in embed.go embeds from internal/webassets/editorassets/.
 # When building via goreleaser the before.hooks block does this copy before
 # invoking the docker build; in a standalone docker build we pull from stage 1.
-COPY --from=editor-build /workspace/apps/editor/build/ ./internal/webassets/editorassets/
+# SvelteKit with adapter-auto outputs to .svelte-kit/output/client/ (static assets).
+# When building via goreleaser, the before.hooks block pre-builds and copies to
+# apps/editor/build/ then to editorassets/. In this standalone Docker build,
+# we pull directly from the .svelte-kit output.
+# NOTE: if your project switches to adapter-static, update this path to
+# /workspace/apps/editor/build/ (matches goreleaser before.hooks convention).
+COPY --from=editor-build /workspace/apps/editor/.svelte-kit/output/client/ ./internal/webassets/editorassets/
 
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-RUN CGO_ENABLED=0 GOOS=linux GOTOOLCHAIN=go1.25rc1 go build \
+RUN CGO_ENABLED=0 GOOS=linux GOTOOLCHAIN=auto go build \
     -tags=release \
     -ldflags="-s -w \
       -X github.com/vedox/vedox/cmd.version=${VERSION} \
