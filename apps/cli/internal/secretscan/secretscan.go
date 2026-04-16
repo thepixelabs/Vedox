@@ -244,6 +244,8 @@ func New(rules []Rule, opts ...Option) Scanner {
 func (s *scanner) Scan(path string, body []byte) []Finding {
 	var findings []Finding
 	sc := bufio.NewScanner(bytes.NewReader(body))
+	// Increase buffer to 1MB to handle minified JSON / base64 blobs.
+	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	lineNum := 0
 	for sc.Scan() {
 		lineNum++
@@ -271,6 +273,17 @@ func (s *scanner) Scan(path string, body []byte) []Finding {
 				Confidence: rule.Confidence,
 			})
 		}
+	}
+	if err := sc.Err(); err != nil {
+		// Scanner error (shouldn't happen with 1MB buffer, but don't swallow it).
+		findings = append(findings, Finding{
+			RuleID:   "SCANNER-ERROR",
+			RuleName: "Scanner read error",
+			FilePath: path,
+			Line:     lineNum,
+			Match:    err.Error(),
+			Severity: SeverityHigh,
+		})
 	}
 	return findings
 }

@@ -120,6 +120,12 @@ func runServerStart(cmd *cobra.Command, _ []string) error {
 	//   --foreground          → run in foreground, block.
 	//   --no-supervisor (R11) → daemonize via self-re-exec, return.
 	//   default               → print supervisor stub warning, fall back to --no-supervisor.
+	// CRIT-01 fix: block --deploy-mode=container|headless until properly implemented.
+	// Prevents future dev from accidentally binding 0.0.0.0 without security review.
+	if serverStartFlags.deployMode != "laptop" && serverStartFlags.deployMode != "" {
+		return fmt.Errorf("[VDX-D13] --deploy-mode=%q is not yet implemented; only 'laptop' is supported in v2.0", serverStartFlags.deployMode)
+	}
+
 	switch {
 	case serverStartFlags.foreground:
 		return runForeground(p)
@@ -276,6 +282,9 @@ func runForeground(p daemon.Paths) error {
 		apiServer := api.NewServer(docStore, wsDB, workspaceRoot, jobStore, aiJobStore, projectRegistry, requireAgent)
 		if globalDB != nil {
 			apiServer.SetGlobalDB(globalDB)
+		}
+		if ks != nil {
+			apiServer.SetKeyStore(ks)
 		}
 		apiServer.Mount(mux)
 	}

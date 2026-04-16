@@ -20,6 +20,8 @@
 //   - Every write path is atomic (temp + fsync + rename for file backends).
 package secrets
 
+import "errors"
+
 // SecretStore is the common interface all storage backends implement. Keys are
 // opaque string identifiers (typically UUID-formatted key IDs from agentauth).
 // Values are raw secret bytes — callers are responsible for encoding choices
@@ -59,9 +61,6 @@ func (e *ErrNotFound) Error() string {
 
 // IsNotFound returns true when err is (or wraps) ErrNotFound.
 func IsNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	_, ok := err.(*ErrNotFound)
-	return ok
+	var e *ErrNotFound
+	return errors.As(err, &e)
 }
