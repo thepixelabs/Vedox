@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/zalando/go-keyring"
 	vdxerr "github.com/vedox/vedox/internal/errors"
+	"github.com/vedox/vedox/internal/secrets"
 )
 
 // keychainService is the service name prefix used when storing secrets in
@@ -88,21 +89,47 @@ type KeyStore struct {
 	// keys is the in-memory view of the metadata file, indexed by ID for
 	// O(1) lookup in the hot middleware path.
 	keys map[string]APIKey
+
+	// store is the pluggable secret backend. When nil, the legacy go-keyring
+	// path is used (backward-compatible default). Inject a non-nil store via
+	// NewKeyStoreWithBackend for age / env fallback support.
+	store secrets.SecretStore
 }
 
-// NewKeyStore constructs an empty, un-persisted KeyStore. Prefer LoadKeyStore
-// for normal usage — it reads the existing metadata file if present.
+// NewKeyStore constructs an empty, un-persisted KeyStore backed by the legacy
+// go-keyring path. Prefer LoadKeyStore for normal usage — it reads the
+// existing metadata file if present.
+//
+// For the pluggable secrets-backend path, use NewKeyStoreWithBackend instead.
 func NewKeyStore(workspaceRoot string) *KeyStore {
 	return &KeyStore{
 		workspaceRoot: workspaceRoot,
 		keys:          make(map[string]APIKey),
+		store:         nil, // nil → use go-keyring directly (legacy path)
+	}
+}
+
+// NewKeyStoreWithBackend constructs an empty, un-persisted KeyStore that uses
+// the supplied SecretStore for all secret read/write operations. This is the
+// injection point for the age, env, and future keychain-helper backends.
+//
+// The caller is responsible for calling store.Open() (if required by the
+// backend) before any IssueKey / RevokeKey / getSecret calls.
+//
+// Prefer LoadKeyStoreWithBackend for normal usage — it reads the existing
+// metadata file if present.
+func NewKeyStoreWithBackend(workspaceRoot string, store secrets.SecretStore) *KeyStore {
+	return &KeyStore{
+		workspaceRoot: workspaceRoot,
+		keys:          make(map[string]APIKey),
+		store:         store,
 	}
 }
 
 // LoadKeyStore reads .vedox/agent-keys.json from the given workspace root and
-// returns a populated KeyStore. If the file does not exist, an empty file is
-// created on disk and an empty KeyStore is returned — this makes first-run
-// behaviour consistent with subsequent runs.
+// returns a populated KeyStore backed by the legacy go-keyring path. If the
+// file does not exist, an empty file is created on disk and an empty KeyStore
+// is returned — this makes first-run behaviour consistent with subsequent runs.
 //
 // A corrupt JSON file returns an error rather than silently discarding keys.
 func LoadKeyStore(workspaceRoot string) (*KeyStore, error) {
@@ -127,6 +154,37 @@ func LoadKeyStore(workspaceRoot string) (*KeyStore, error) {
 		return ks, nil
 	}
 
+	var list []APIKey
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, fmt.Errorf("parse agent-keys.json: %w", err)
+	}
+	for _, k := range list {
+		ks.keys[k.ID] = k
+	}
+	return ks, nil
+}
+
+// LoadKeyStoreWithBackend is the pluggable-backend variant of LoadKeyStore. It
+// reads the metadata file and returns a KeyStore wired to the given
+// SecretStore. The caller must call store.Open() before issuing any key
+// operations.
+func LoadKeyStoreWithBackend(workspaceRoot string, store secrets.SecretStore) (*KeyStore, error) {
+	ks := NewKeyStoreWithBackend(workspaceRoot, store)
+
+	path := ks.metadataPath()
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		if writeErr := ks.writeLocked(); writeErr != nil {
+			return nil, fmt.Errorf("create empty agent-keys.json: %w", writeErr)
+		}
+		return ks, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read agent-keys.json: %w", err)
+	}
+	if len(data) == 0 {
+		return ks, nil
+	}
 	var list []APIKey
 	if err := json.Unmarshal(data, &list); err != nil {
 		return nil, fmt.Errorf("parse agent-keys.json: %w", err)
@@ -171,23 +229,20 @@ func (ks *KeyStore) IssueKey(name, project, pathPrefix string) (string, string, 
 		CreatedAt:  time.Now().UTC(),
 	}
 
-	// Store secret in keychain BEFORE persisting metadata — if keychain fails
-	// we do not want a dangling metadata entry with no retrievable secret.
-	if err := keyring.Set(keychainService, id, secret); err != nil {
-		return "", "", vdxerr.Wrap(
-			vdxerr.ErrKeychainUnavailable,
-			"Could not store agent API key secret in the OS keychain.",
-			err,
-		)
+	// Store secret in the secret backend BEFORE persisting metadata — if the
+	// backend fails we do not want a dangling metadata entry with no retrievable
+	// secret.
+	if err := ks.setSecret(id, secret); err != nil {
+		return "", "", err
 	}
 
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 	ks.keys[id] = key
 	if err := ks.writeLocked(); err != nil {
-		// Rollback: remove the keychain entry so we do not leak a secret for
-		// a key that was never persisted to the metadata file.
-		_ = keyring.Delete(keychainService, id)
+		// Rollback: remove the secret so we do not leak an entry for a key
+		// that was never persisted to the metadata file.
+		_ = ks.deleteSecret(id)
 		delete(ks.keys, id)
 		return "", "", fmt.Errorf("persist agent-keys.json: %w", err)
 	}
@@ -213,13 +268,12 @@ func (ks *KeyStore) RevokeKey(id string) error {
 		return nil
 	}
 
-	// Delete the keychain entry first. keyring.Delete on a missing entry
-	// returns ErrNotFound, which we ignore — the end state (no entry) is what
-	// we want regardless.
-	if err := keyring.Delete(keychainService, id); err != nil && err != keyring.ErrNotFound {
+	// Delete the secret first. A "not found" error on delete is fine — the
+	// desired end state (no entry) is achieved regardless.
+	if err := ks.deleteSecret(id); err != nil && !secrets.IsNotFound(err) {
 		return vdxerr.Wrap(
 			vdxerr.ErrKeychainUnavailable,
-			"Could not delete agent API key secret from the OS keychain.",
+			"Could not delete agent API key secret from the secret store.",
 			err,
 		)
 	}
@@ -258,10 +312,29 @@ func (ks *KeyStore) Lookup(id string) (APIKey, bool) {
 	return k, ok
 }
 
-// getSecret fetches the plaintext HMAC secret for the given key ID from the
-// OS keychain. Returns VDX-302 if the keychain is unreachable, or a plain
-// error if the entry simply does not exist (caller treats that as auth fail).
+// getSecret fetches the plaintext HMAC secret for the given key ID.
+//
+// When ks.store is non-nil the pluggable backend is used; otherwise it falls
+// back to the legacy go-keyring path. Returns VDX-302 if the backend is
+// unreachable, or a plain error if the entry does not exist (caller treats
+// that as auth fail).
 func (ks *KeyStore) getSecret(id string) (string, error) {
+	if ks.store != nil {
+		val, err := ks.store.Get(id)
+		if secrets.IsNotFound(err) {
+			return "", fmt.Errorf("no secret entry for %s", id)
+		}
+		if err != nil {
+			return "", vdxerr.Wrap(
+				vdxerr.ErrKeychainUnavailable,
+				"Could not read agent API key secret from the secret store.",
+				err,
+			)
+		}
+		return string(val), nil
+	}
+
+	// Legacy go-keyring path (macOS Keychain default, existing behaviour).
 	secret, err := keyring.Get(keychainService, id)
 	if err == keyring.ErrNotFound {
 		return "", fmt.Errorf("no keychain entry for %s", id)
@@ -274,6 +347,39 @@ func (ks *KeyStore) getSecret(id string) (string, error) {
 		)
 	}
 	return secret, nil
+}
+
+// setSecret stores a HMAC secret for the given key ID in the configured backend.
+func (ks *KeyStore) setSecret(id, secret string) error {
+	if ks.store != nil {
+		if err := ks.store.Put(id, []byte(secret)); err != nil {
+			return vdxerr.Wrap(
+				vdxerr.ErrKeychainUnavailable,
+				"Could not store agent API key secret in the secret store.",
+				err,
+			)
+		}
+		return nil
+	}
+	// Legacy go-keyring path.
+	if err := keyring.Set(keychainService, id, secret); err != nil {
+		return vdxerr.Wrap(
+			vdxerr.ErrKeychainUnavailable,
+			"Could not store agent API key secret in the OS keychain.",
+			err,
+		)
+	}
+	return nil
+}
+
+// deleteSecret removes the HMAC secret for the given key ID from the backend.
+// Returns secrets.ErrNotFound (or keyring.ErrNotFound) if the entry is absent.
+func (ks *KeyStore) deleteSecret(id string) error {
+	if ks.store != nil {
+		return ks.store.Delete(id)
+	}
+	// Legacy go-keyring path.
+	return keyring.Delete(keychainService, id)
 }
 
 // writeLocked persists ks.keys to disk atomically. Caller must hold ks.mu.

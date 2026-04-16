@@ -636,6 +636,22 @@ export const api = {
     );
   },
 
+  // ---------------------------------------------------------------------------
+  // Doc history (WS-H)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * GET /api/projects/:project/docs/:path/history?limit=N
+   * Returns a timeline of commits for the given document, most recent first.
+   * Each entry includes commitHash, author, authorKind, date (RFC3339), message,
+   * summary (prose), and a changes[] array of block-level diffs.
+   */
+  getDocHistory(project: string, docPath: string, limit = 50): Promise<import('$lib/components/history/types.js').HistoryEntry[]> {
+    return get<import('$lib/components/history/types.js').HistoryEntry[]>(
+      `/api/projects/${encodeURIComponent(project)}/docs/${encodePath(docPath)}/history?limit=${limit}`,
+    );
+  },
+
   getCodexConfig(project: string): Promise<CodexConfig> {
     return get<CodexConfig>(`/api/projects/${encodeURIComponent(project)}/providers/codex`);
   },

@@ -9,6 +9,7 @@ import (
 	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
+	"github.com/vedox/vedox/internal/providers"
 	"github.com/vedox/vedox/internal/scanner"
 	"github.com/vedox/vedox/internal/store"
 )
@@ -40,6 +41,17 @@ type Server struct {
 	// to retouch the server constructor.
 	requireAgent agentauth.Middleware
 
+	// globalDB is the cross-workspace database (~/.vedox/global.db) that holds
+	// the repo registry, agent install state, and daily event roll-ups. It is
+	// nil in dev-server mode (where only the workspace DB is open). Handlers
+	// that depend on it must check for nil and return 503 if absent.
+	globalDB *db.GlobalDB
+
+	// keyStore is the HMAC key store used by the Doc Agent installer.
+	// It is nil in dev-server mode (where the daemon has not loaded keys).
+	// Handlers that depend on it must check for nil and return 503 if absent.
+	keyStore providers.KeyIssuer
+
 	// homeDirOverride, if non-empty, replaces os.UserHomeDir() when resolving
 	// user-global provider config paths (e.g. ~/.codex/config.toml). Production
 	// code leaves this empty; tests set it to a t.TempDir() for isolation.
@@ -50,6 +62,23 @@ type Server struct {
 // config paths. Tests only — production code must not call this.
 func (s *Server) SetHomeDirOverride(home string) {
 	s.homeDirOverride = home
+}
+
+// SetGlobalDB injects the GlobalDB handle into the server. Call this after
+// NewServer when the daemon has successfully opened ~/.vedox/global.db.
+// The server does not own the GlobalDB lifecycle — the caller is responsible
+// for closing it on shutdown.
+func (s *Server) SetGlobalDB(g *db.GlobalDB) {
+	s.globalDB = g
+}
+
+// SetKeyStore injects the HMAC KeyStore into the server. Call this after
+// NewServer when the daemon has successfully loaded the agent key store.
+// The ks value must implement providers.KeyIssuer — in production this is
+// always *agentauth.KeyStore. Tests that do not exercise agent install can
+// leave this nil, which causes the agent handlers to return 503.
+func (s *Server) SetKeyStore(ks providers.KeyIssuer) {
+	s.keyStore = ks
 }
 
 // userHome returns homeDirOverride when set, otherwise os.UserHomeDir().
@@ -157,6 +186,10 @@ func (s *Server) Mount(mux *http.ServeMux) {
 				s.handleDocMetadata(w, r)
 				return
 			}
+			if p == "history" || strings.HasSuffix(p, "/history") {
+				s.handleDocHistory(w, r)
+				return
+			}
 			s.handleGetDoc(w, r)
 		})
 
@@ -175,6 +208,28 @@ func (s *Server) Mount(mux *http.ServeMux) {
 		// Delete both the committed file and any draft.
 		dr.Delete("/*", s.handleDeleteDoc)
 	})
+
+	// Global repo registry — backed by GlobalDB (~/.vedox/global.db).
+	// Returns 503 when the daemon GlobalDB is not available (dev-server mode).
+	r.Get("/api/repos", s.handleListRepos)
+	r.Post("/api/repos", s.handleCreateRepo)
+	// Onboarding-specific repo endpoints. These must be registered before the
+	// generic POST /api/repos so chi matches the more-specific routes first.
+	r.Post("/api/repos/create", s.handleCreateRepoWithInit)
+	r.Post("/api/repos/register", s.handleRegisterRepo)
+
+	// Doc Agent management — install/uninstall/list across all supported providers.
+	// Requires a KeyStore (SetKeyStore); returns 503 in dev-server mode.
+	r.Get("/api/agent/list", s.handleAgentList)
+	r.Post("/api/agent/install", s.handleAgentInstall)
+	r.Post("/api/agent/uninstall", s.handleAgentUninstall)
+
+	// Inline code preview — resolves a vedox:// URL and returns source content
+	// for Shiki rendering. Read-only; no agent auth required.
+	r.Get("/api/preview", s.handlePreview)
+
+	// Analytics summary — cross-workspace event aggregates from GlobalDB.
+	r.Get("/api/analytics/summary", s.handleAnalyticsSummary)
 
 	// AI provider config — manage Claude Code config, Codex global config.
 	r.Route("/api/projects/{project}/providers", func(pr chi.Router) {
@@ -202,6 +257,14 @@ func (s *Server) Mount(mux *http.ServeMux) {
 // intentionally minimal — it should never fail if the binary is running.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// MountHealthz registers the /healthz route on mux using the provided handler.
+// This is called by cmd/server.go so the daemon's richer /healthz (with uptime,
+// version, pid, etc.) replaces the dev-server placeholder. The handler is
+// unauthenticated per spec §5.1 — HMAC middleware does not apply.
+func MountHealthz(mux *http.ServeMux, handler http.HandlerFunc) {
+	mux.HandleFunc("/healthz", handler)
 }
 
 // storeForProject returns the DocStore responsible for the given project name.

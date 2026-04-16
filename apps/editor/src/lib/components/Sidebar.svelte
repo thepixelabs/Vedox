@@ -5,8 +5,10 @@
    * Structure (top to bottom):
    *   1. Collapse toggle button (top edge)
    *   2. ProjectSwitcher (search-first input)
-   *   3. ProjectTree (doc list for current project)
-   *   4. Bottom bar: Settings link + ThemeToggle
+   *   3. DocTree — hierarchical doc navigator with inline filter (Phase 2)
+   *   4. SidebarDock — theme, density, settings
+   *
+   * Phase 2: SearchBar removed; filter is now embedded inside DocTree.
    *
    * Collapsed state persists to localStorage via sidebarStore.
    * Width transitions via CSS — no JS animations.
@@ -18,9 +20,7 @@
 
   import { page } from "$app/stores";
   import ProjectSwitcher from "./ProjectSwitcher.svelte";
-  import ProjectTree from "./ProjectTree.svelte";
-  import SearchBar from "./SearchBar.svelte";
-  import ThemeToggle from "./ThemeToggle.svelte";
+  import DocTree from "./DocTree.svelte";
   import SidebarDock from "./SidebarDock.svelte";
   import SidebarOverview from "./SidebarOverview.svelte";
   import { sidebarStore } from "$lib/stores/sidebar";
@@ -97,18 +97,11 @@
       <!-- Divider -->
       <div class="sidebar__divider" role="separator" aria-hidden="true"></div>
 
-      <!-- Search bar — only visible when a project is active -->
-      {#if currentProject}
-        <div class="sidebar__section sidebar__section--search">
-          <SearchBar project={currentProject.id} />
-        </div>
-      {/if}
-
-      <!-- Project tree -->
+      <!-- Doc tree (includes filter input) — replaces flat list + search bar -->
       <div class="sidebar__section sidebar__section--tree">
         {#if currentProject}
           <div class="sidebar__section-label" aria-hidden="true">Documents</div>
-          <ProjectTree project={currentProject} />
+          <DocTree project={currentProject} />
         {:else}
           <div class="sidebar__section-label" aria-hidden="true">Projects</div>
           <nav aria-label="All projects">
@@ -134,6 +127,65 @@
           </nav>
         {/if}
       </div>
+
+      <!-- Global nav links — graph, analytics, settings -->
+      <nav class="sidebar__nav" aria-label="Global navigation">
+        <a
+          class="sidebar__nav-link"
+          class:sidebar__nav-link--active={$page.url.pathname === '/graph'}
+          href="/graph"
+          aria-label="Node graph"
+          aria-current={$page.url.pathname === '/graph' ? 'page' : undefined}
+        >
+          <span class="sidebar__nav-icon" aria-hidden="true">
+            <!-- Share / node graph icon -->
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+          </span>
+          <span class="sidebar__nav-label">Graph</span>
+        </a>
+
+        <a
+          class="sidebar__nav-link"
+          class:sidebar__nav-link--active={$page.url.pathname === '/analytics'}
+          href="/analytics"
+          aria-label="Analytics"
+          aria-current={$page.url.pathname === '/analytics' ? 'page' : undefined}
+        >
+          <span class="sidebar__nav-icon" aria-hidden="true">
+            <!-- Bar chart icon -->
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"/>
+              <line x1="12" y1="20" x2="12" y2="4"/>
+              <line x1="6" y1="20" x2="6" y2="14"/>
+              <line x1="2" y1="20" x2="22" y2="20"/>
+            </svg>
+          </span>
+          <span class="sidebar__nav-label">Analytics</span>
+        </a>
+
+        <a
+          class="sidebar__nav-link"
+          class:sidebar__nav-link--active={$page.url.pathname === '/settings'}
+          href="/settings"
+          aria-label="Settings"
+          aria-current={$page.url.pathname === '/settings' ? 'page' : undefined}
+        >
+          <span class="sidebar__nav-icon" aria-hidden="true">
+            <!-- Gear icon -->
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 1 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </span>
+          <span class="sidebar__nav-label">Settings</span>
+        </a>
+      </nav>
 
       <!-- Bottom dock — theme, density, settings, collapse -->
       <SidebarDock />
@@ -248,10 +300,6 @@
     padding-bottom: var(--space-2);
   }
 
-  .sidebar__section--search {
-    padding: 0 0 var(--space-1);
-  }
-
   .sidebar__section--tree {
     flex: 1;
     overflow-y: auto;
@@ -261,7 +309,7 @@
   }
 
   .sidebar__section-label {
-    padding: var(--space-2) var(--space-3) 24px;
+    padding: var(--space-2) var(--space-3) var(--space-2);
     font-size: var(--text-2xs);
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -316,6 +364,65 @@
     align-items: center;
     flex-shrink: 0;
   }
+
+  /* ── Global nav links (graph / analytics / settings) ──────────────────── */
+
+  .sidebar__nav {
+    flex-shrink: 0;
+    padding: var(--space-1) var(--space-2);
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .sidebar__nav-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 5px var(--space-3);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    margin: 1px var(--space-1);
+    transition: background-color 80ms var(--ease-out), color 80ms var(--ease-out);
+  }
+
+  .sidebar__nav-link:hover {
+    background-color: var(--color-surface-overlay);
+    color: var(--color-text-primary);
+  }
+
+  .sidebar__nav-link:focus-visible {
+    outline: 2px solid var(--accent-solid);
+    outline-offset: -2px;
+  }
+
+  .sidebar__nav-link--active {
+    box-shadow: inset 2px 0 0 var(--accent-solid);
+    color: var(--text-1);
+    background-color: var(--color-surface-overlay);
+  }
+
+  .sidebar__nav-link--active:hover {
+    background-color: var(--color-surface-overlay);
+    color: var(--text-1);
+  }
+
+  .sidebar__nav-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+  }
+
+  .sidebar__nav-link--active .sidebar__nav-icon {
+    color: var(--accent-solid);
+  }
+
+  .sidebar__nav-label {
+    line-height: 1.4;
+  }
+
+  /* ── Legacy bottom-link styles (unused but kept for reference) ───────── */
 
   .sidebar__bottom {
     flex-shrink: 0;

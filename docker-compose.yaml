@@ -1,0 +1,137 @@
+# Vedox docker-compose.yaml
+#
+# Quick start:
+#   1. Create ./secrets/age-passphrase.txt with a strong random passphrase.
+#   2. docker compose up -d
+#   3. Visit http://127.0.0.1:5150 (or the address you published).
+#
+# The daemon starts in container mode automatically (detects /.dockerenv).
+# VEDOX_BIND_ACK is required because container mode must bind 0.0.0.0 to
+# be reachable from the host — see the security note below.
+#
+# Security notes:
+#   - Port is published on 127.0.0.1 only by default (loopback-only).
+#     Change to "5150:5150" ONLY if you understand that exposes the daemon
+#     on all host interfaces (LAN, WAN depending on your firewall).
+#   - VEDOX_BIND_ACK acknowledges you have taken responsibility for the
+#     network trust boundary in container mode. See:
+#     https://vedox.pixelabs.sh/docs/deploy/container-security
+#   - The age passphrase is injected via a Docker secret (file mount at
+#     /run/secrets/vedox_passphrase) — it is never stored in an env var
+#     visible in `docker inspect` or in the Compose file itself.
+#
+# Persisted state (vedox-data volume):
+#   /home/nonroot/.vedox/
+#     config.toml        — daemon configuration
+#     repos.json         — multi-repo registry
+#     user-prefs.json    — editor personalization
+#     global.db          — SQLite global database (FTS5 + WAL)
+#     global.db-wal      — WAL file
+#     secrets.age        — age-encrypted secrets (R2 fallback)
+#     daemon-token       — bootstrap token (regenerated each start)
+#     logs/              — lumberjack-rotated daemon logs
+#     crashes/           — panic dumps
+#     run/               — PID sidecar (tmpfs is preferred; falls back here)
+#
+# Project repo bind-mount examples (uncomment and adjust):
+#   To register a host project repo inside the container, bind-mount it and
+#   register it with `vedox repo add --type=project-scoped-public
+#   --path=/workspace/<name>`. The registry stores the container-visible path.
+#
+# Voice commands:
+#   Disabled in container mode. Voice input requires direct microphone access
+#   which is unavailable in Docker containers. A `vedox voice-forward`
+#   subcommand (planned for v2.1) will allow the laptop client to forward
+#   transcripts to a remote daemon.
+
+services:
+  vedox:
+    image: ghcr.io/pixelicous/vedox:latest
+    container_name: vedox
+    restart: unless-stopped
+
+    ports:
+      # Loopback-only by default — safe for local/same-host editor access.
+      # Change to "5150:5150" only if you need LAN access and have firewall rules.
+      - "127.0.0.1:5150:5150"
+
+    environment:
+      # container mode: binds 0.0.0.0 inside the container namespace.
+      # The published port above controls actual host-side exposure.
+      VEDOX_DEPLOY_MODE: container
+
+      # Required acknowledgement that container mode binds 0.0.0.0 internally.
+      # Read the security note above before changing the port binding.
+      VEDOX_BIND_ACK: "i-understand-container-exposure"
+
+      # Age passphrase delivered via Docker secret (preferred over raw env var).
+      # The daemon reads this file at startup and keeps the passphrase in memory.
+      VEDOX_AGE_PASSPHRASE_FILE: /run/secrets/vedox_passphrase
+
+      # Optional: set a fixed port (default 5150). If changed, update the
+      # ports mapping above to match.
+      # VEDOX_PORT: "5150"
+
+      # Optional: enable the Jupyter-style bootstrap token log line on first run.
+      # When set to "1" the daemon prints the bootstrap token to stdout at startup.
+      # VEDOX_BOOTSTRAP_ENABLED: "1"
+
+      # Optional: set allowed CORS origins for an editor running on the host
+      # (e.g., Tauri or a separately served SvelteKit dev server).
+      # VEDOX_ALLOWED_ORIGINS: "http://127.0.0.1:5151,app://vedox"
+
+    volumes:
+      # Persistent daemon state — registry, databases, logs, secrets.age.
+      # This named volume survives container recreation.
+      - vedox-data:/home/nonroot/.vedox
+
+      # Runtime dir on tmpfs — PID sidecar, ephemeral; recreated each start.
+      - type: tmpfs
+        target: /run/vedox
+
+      # ── Project repo bind-mount examples ──────────────────────────────────
+      # Uncomment and adjust for each project repo you want the daemon to index.
+      # After mounting, register with:
+      #   docker exec vedox vedox repo add --type=project-scoped-public \
+      #     --path=/workspace/my-project --name=my-project
+      #
+      # - ./projects/my-project:/workspace/my-project:rw
+      # - ./projects/docs-site:/workspace/docs-site:rw
+
+      # ── Optional: share host Git config (read-only) ───────────────────────
+      # Helps the daemon resolve user.name and user.email for Git commits.
+      # - ~/.gitconfig:/home/nonroot/.gitconfig:ro
+
+      # ── Optional: share host SSH keys (read-only) ─────────────────────────
+      # Only needed if the daemon makes Git pushes over SSH on your behalf.
+      # SECURITY: grants the container read access to your private SSH keys.
+      # - ~/.ssh:/home/nonroot/.ssh:ro
+
+    secrets:
+      - vedox_passphrase
+
+    healthcheck:
+      # Mirrors the Dockerfile HEALTHCHECK. Compose uses this to determine
+      # service health for depends_on conditions and for `docker compose ps`.
+      test: ["/vedox", "server", "status", "--json"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+secrets:
+  vedox_passphrase:
+    # Create this file before running `docker compose up`:
+    #   mkdir -p secrets
+    #   openssl rand -base64 32 > secrets/age-passphrase.txt
+    #   chmod 600 secrets/age-passphrase.txt
+    # Add secrets/age-passphrase.txt to .gitignore — never commit it.
+    file: ./secrets/age-passphrase.txt
+
+volumes:
+  vedox-data:
+    # Named volume managed by Docker. To inspect its location on the host:
+    #   docker volume inspect vedox_vedox-data
+    # To back up the volume before a major upgrade:
+    #   docker run --rm -v vedox_vedox-data:/data -v $(pwd):/backup \
+    #     busybox tar czf /backup/vedox-data-backup.tar.gz /data

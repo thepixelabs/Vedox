@@ -1,0 +1,8 @@
+EC private key for TLS mutual auth:
+
+-----BEGIN EC PRIVATE KEY-----
+MHQCAQEEIBkg4HKFWXXXXXXXXXXXXXXXXXXXXXFAKEKEY==
+-----END EC PRIVATE KEY-----
+
+Issued: 2026-01-15
+Expires: 2027-01-15
