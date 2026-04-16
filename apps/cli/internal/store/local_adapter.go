@@ -446,12 +446,59 @@ func (a *LocalAdapter) safePath(op, path string) (string, error) {
 	return abs, nil
 }
 
+// stripDraftSuffixes removes draft-variant suffixes from a filename so the
+// residual basename can be compared against the secret blocklist.
+//
+// Recognised suffixes (longest match wins, applied once):
+//   - ".draft.md.<N>"  — numbered draft (e.g. ".env.draft.md.2")
+//   - ".draft.md"      — standard draft (e.g. ".env.draft.md")
+//   - ".draft"         — draft without .md extension (e.g. ".env.draft")
+//
+// If no recognised suffix is present the original name is returned unchanged.
+// The match is case-sensitive to match the rest of the blocklist logic.
+func stripDraftSuffixes(name string) string {
+	// Numbered draft: ends with ".draft.md." followed by one or more digits.
+	// Walk from the right: find the last ".draft.md." occurrence and check that
+	// the tail after it is all digits.
+	const draftMD = ".draft.md"
+	if idx := strings.LastIndex(name, draftMD+"."); idx >= 0 {
+		tail := name[idx+len(draftMD)+1:]
+		allDigits := len(tail) > 0
+		for _, ch := range tail {
+			if ch < '0' || ch > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			return name[:idx]
+		}
+	}
+	// Standard .draft.md suffix.
+	if strings.HasSuffix(name, draftMD) {
+		return strings.TrimSuffix(name, draftMD)
+	}
+	// Bare .draft suffix (no .md extension).
+	if strings.HasSuffix(name, ".draft") {
+		return strings.TrimSuffix(name, ".draft")
+	}
+	return name
+}
+
 // isSecretFile reports whether name matches any pattern in the secret blocklist.
 // name should be the base filename (no directory components). Patterns use
 // filepath.Match glob syntax.
+//
+// Draft-variant suffixes (.draft.md, .draft.md.<N>, .draft) are stripped from
+// name before the blocklist check so that ".env.draft.md" is correctly treated
+// as a secret file (FINAL_PLAN changelog item 31).
 func isSecretFile(name string) bool {
+	// Strip any draft suffix before the blocklist check. This ensures that
+	// ".env.draft.md" is seen as ".env" and correctly blocked.
+	stripped := stripDraftSuffixes(name)
+
 	for _, pattern := range secretBlocklist {
-		matched, err := filepath.Match(pattern, name)
+		matched, err := filepath.Match(pattern, stripped)
 		if err != nil {
 			// Only happens if pattern is malformed — our patterns are constants, so
 			// this is a programming error; treat as a match to fail safe.
