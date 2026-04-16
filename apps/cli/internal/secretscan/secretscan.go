@@ -131,6 +131,9 @@ type Finding struct {
 	// RuleID is the Rule.ID that triggered this finding.
 	RuleID string
 
+	// RuleName is the human-readable name of the rule (copied from Rule.Name).
+	RuleName string
+
 	// FilePath is the file path passed to Scan (not resolved by the scanner —
 	// the caller is responsible for path safety).
 	FilePath string
@@ -156,7 +159,7 @@ type Finding struct {
 // terminal output.
 func (f Finding) String() string {
 	return fmt.Sprintf("[%s] %s (%s/%s) at %s:%d:%d — match: %s",
-		f.RuleID, ruleNameForID(f.RuleID), f.Severity, f.Confidence,
+		f.RuleID, f.RuleName, f.Severity, f.Confidence,
 		f.FilePath, f.Line, f.Column, f.Match)
 }
 
@@ -200,17 +203,14 @@ func WithSeverityFilter(minSeverity Severity) Option {
 
 // scanner is the concrete Scanner implementation.
 type scanner struct {
-	rules       []Rule
-	allowlist   map[string]bool
-	minSeverity Severity
+	rules          []Rule
+	allowlist      map[string]bool
+	minSeverity    Severity
+	ruleNameIndex  map[string]string // rule ID → name, populated in New
 }
 
-// ruleNameIndex maps rule ID → rule name for String() formatting without
-// scanning the rules slice on every call. Populated in New.
-var ruleNameIndex = map[string]string{}
-
-func ruleNameForID(id string) string {
-	if name, ok := ruleNameIndex[id]; ok {
+func (s *scanner) ruleNameForID(id string) string {
+	if name, ok := s.ruleNameIndex[id]; ok {
 		return name
 	}
 	return id
@@ -224,17 +224,18 @@ func ruleNameForID(id string) string {
 // no effect on the scanner.
 func New(rules []Rule, opts ...Option) Scanner {
 	s := &scanner{
-		rules:       make([]Rule, len(rules)),
-		allowlist:   make(map[string]bool),
-		minSeverity: SeverityLow,
+		rules:         make([]Rule, len(rules)),
+		allowlist:     make(map[string]bool),
+		minSeverity:   SeverityLow,
+		ruleNameIndex: make(map[string]string, len(rules)),
 	}
 	copy(s.rules, rules)
 	for _, opt := range opts {
 		opt(s)
 	}
-	// Build rule name index.
+	// Build rule name index (per-instance, not package-level — avoids data race).
 	for _, r := range s.rules {
-		ruleNameIndex[r.ID] = r.Name
+		s.ruleNameIndex[r.ID] = r.Name
 	}
 	return s
 }
@@ -261,6 +262,7 @@ func (s *scanner) Scan(path string, body []byte) []Finding {
 			match := line[loc[0]:loc[1]]
 			findings = append(findings, Finding{
 				RuleID:     rule.ID,
+				RuleName:   rule.Name,
 				FilePath:   path,
 				Line:       lineNum,
 				Column:     loc[0] + 1, // 1-indexed

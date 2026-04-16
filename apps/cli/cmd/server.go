@@ -197,8 +197,10 @@ func runForeground(p daemon.Paths) error {
 		return fmt.Errorf("[VDX-D08] %w", err)
 	}
 	if serverStartFlags.foreground {
-		fmt.Printf("vedox daemon token: %s\n", token)
-		fmt.Printf("editor URL: http://%s?token=%s\n", listenAddr, token)
+		// Print token to stderr only — stdout may be captured by supervisor logs.
+		// The token is also written to ~/.vedox/daemon-token (0600).
+		fmt.Fprintf(os.Stderr, "vedox daemon token: %s\n", token)
+		fmt.Fprintf(os.Stderr, "editor URL: http://%s?token=%s\n", listenAddr, token)
 	}
 
 	// Open the global database (~/.vedox/global.db).
@@ -234,7 +236,16 @@ func runForeground(p daemon.Paths) error {
 	jobStore := scanner.NewJobStore()
 	aiJobStore := ai.NewJobStore(3)
 	projectRegistry := store.NewProjectRegistry()
-	requireAgent := agentauth.PassthroughAuth()
+	// Wire real HMAC agent authentication — PassthroughAuth was a placeholder.
+	ks, ksErr := agentauth.LoadKeyStore(p.Home)
+	var requireAgent agentauth.Middleware
+	if ksErr != nil {
+		slog.Warn("agent keystore unavailable; agent endpoints will reject all requests",
+			"error", ksErr)
+		requireAgent = agentauth.PassthroughAuth() // degrade: still start, but agents can't auth
+	} else {
+		requireAgent = agentauth.RequireAgent(ks)
+	}
 
 	// Open the workspace-scoped DB so the analytics Collector can write events.
 	// Failure is non-fatal — analytics degrades gracefully; the rest of the daemon
