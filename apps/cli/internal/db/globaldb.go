@@ -3,13 +3,21 @@ package db
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+//go:embed global_migrations/*.sql
+var globalMigrationsFS embed.FS
 
 // GlobalDBPath is the canonical path of the global SQLite file.
 // Callers should use os.UserHomeDir() to resolve "~".
@@ -216,14 +224,17 @@ CREATE TABLE IF NOT EXISTS analytics_cache (
 );
 `
 
-// globalMigrate applies the global schema. Unlike the workspace migrations
-// which use embedded SQL files, the global schema is embedded inline here
-// because it is a single cohesive bootstrap — there are no incremental DDL
-// changes yet (global.db does not exist prior to v2).
+// globalMigrate applies the global schema in two phases:
 //
-// Future incremental migrations should follow the NNN_name.sql pattern and
-// use a dedicated embed.FS, mirroring the workspace migration framework.
+//  1. Bootstrap (version 1): the inline globalSchema DDL is applied once via
+//     INSERT OR IGNORE on schema_version — this is idempotent on every open.
+//
+//  2. Versioned (version >= 1001): SQL files embedded from global_migrations/
+//     are applied in ascending numeric order using the same framework as the
+//     workspace migration runner. This allows incremental global DB changes
+//     without editing the inline bootstrap SQL.
 func globalMigrate(db *sql.DB) error {
+	// Phase 1: bootstrap.
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("vedox/globaldb: begin schema tx: %w", err)
@@ -244,6 +255,77 @@ func globalMigrate(db *sql.DB) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("vedox/globaldb: commit schema: %w", err)
 	}
+
+	// Phase 2: versioned incremental migrations from global_migrations/*.sql.
+	return runGlobalMigrations(db)
+}
+
+// loadGlobalMigrations reads the embedded global_migrations directory and
+// returns migrations in ascending version order.  File names must follow the
+// NNN_description.sql convention (same as workspace migrations).
+func loadGlobalMigrations() ([]migration, error) {
+	entries, err := fs.ReadDir(globalMigrationsFS, "global_migrations")
+	if err != nil {
+		return nil, fmt.Errorf("vedox/globaldb: read embedded global_migrations: %w", err)
+	}
+	var out []migration
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		parts := strings.SplitN(e.Name(), "_", 2)
+		if len(parts) < 2 {
+			return nil, fmt.Errorf("vedox/globaldb: malformed global migration name %q", e.Name())
+		}
+		v, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return nil, fmt.Errorf("vedox/globaldb: global migration %q has non-numeric prefix: %w", e.Name(), err)
+		}
+		b, err := fs.ReadFile(globalMigrationsFS, "global_migrations/"+e.Name())
+		if err != nil {
+			return nil, fmt.Errorf("vedox/globaldb: read global migration %q: %w", e.Name(), err)
+		}
+		out = append(out, migration{version: v, name: e.Name(), sql: string(b)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].version < out[j].version })
+	return out, nil
+}
+
+// runGlobalMigrations applies pending global_migrations SQL files that have
+// not yet been recorded in schema_version.  Each migration runs in its own
+// transaction (consistent with the workspace migration runner).
+func runGlobalMigrations(db *sql.DB) error {
+	migs, err := loadGlobalMigrations()
+	if err != nil {
+		return err
+	}
+	current, err := currentSchemaVersion(db)
+	if err != nil {
+		return fmt.Errorf("vedox/globaldb: read schema_version: %w", err)
+	}
+	for _, m := range migs {
+		if m.version <= current {
+			continue
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("vedox/globaldb: begin tx for global migration %s: %w", m.name, err)
+		}
+		if _, err := tx.Exec(m.sql); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("vedox/globaldb: apply global migration %s: %w", m.name, err)
+		}
+		if _, err := tx.Exec(
+			`INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES (?, ?)`,
+			m.version, time.Now().UTC().Format(time.RFC3339),
+		); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("vedox/globaldb: record schema_version for %s: %w", m.name, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("vedox/globaldb: commit global migration %s: %w", m.name, err)
+		}
+	}
 	return nil
 }
 
@@ -261,6 +343,13 @@ type Repo struct {
 	Status    string // "active" | "archived" | "error"
 	CreatedAt string // RFC3339
 	UpdatedAt string // RFC3339
+}
+
+// SaveRepo is the canonical name for inserting or updating a repo row,
+// satisfying the RepoStore interface used by registry and analytics packages.
+// It delegates to UpsertRepo.
+func (g *GlobalDB) SaveRepo(ctx context.Context, r Repo) error {
+	return g.UpsertRepo(ctx, r)
 }
 
 // UpsertRepo inserts or updates a repo row. ID must be a non-empty UUID.

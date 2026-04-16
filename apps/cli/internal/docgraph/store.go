@@ -167,6 +167,35 @@ func (g *GraphStore) DeleteRefs(ctx context.Context, docID string) error {
 	})
 }
 
+// GetAllRefsForPrefix returns all outgoing references whose source_doc_id begins
+// with the given prefix. This is used by the graph API endpoint to retrieve every
+// edge that belongs to a specific project in one query, avoiding N+1 round-trips
+// over individual document IDs.
+//
+// prefix must be a workspace-relative slash path prefix, e.g. "my-project/".
+// The trailing slash is significant — callers must include it so that a project
+// named "foo" does not accidentally match "foobar/".
+func (g *GraphStore) GetAllRefsForPrefix(ctx context.Context, prefix string) ([]DocRef, error) {
+	if prefix == "" {
+		return nil, fmt.Errorf("docgraph: GetAllRefsForPrefix: empty prefix")
+	}
+	// SQLite LIKE with a trailing wildcard uses the idx_doc_refs_source index,
+	// so this query is index-assisted even on large graphs. The '%' wildcard is
+	// appended in Go to keep the query string a string literal.
+	rows, err := g.readDB.QueryContext(ctx,
+		`SELECT source_doc_id, target_path, link_type, line_num, anchor_text
+		   FROM doc_references
+		  WHERE source_doc_id LIKE ? ESCAPE '\'
+		  ORDER BY source_doc_id, line_num, id`,
+		prefix+"%",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("docgraph: GetAllRefsForPrefix %q: %w", prefix, err)
+	}
+	defer rows.Close()
+	return scanRefs(rows)
+}
+
 // scanRefs scans a *sql.Rows result set into a []DocRef slice.
 func scanRefs(rows *sql.Rows) ([]DocRef, error) {
 	var refs []DocRef

@@ -9,8 +9,10 @@
 package api
 
 import (
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -84,6 +86,53 @@ func corsMiddleware(next http.Handler) http.Handler {
 				_, _ = w.Write([]byte(`{"error":"VDX-403","message":"origin not allowed for mutating request"}`))
 				return
 			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requireBootstrapToken is a chi-compatible middleware (func(http.Handler)
+// http.Handler) that enforces the daemon bootstrap token on the request.
+//
+// The token must be supplied as a Bearer credential in the Authorization header:
+//
+//	Authorization: Bearer <64-hex-char token>
+//
+// Failure modes (fail-closed):
+//   - No token configured on the server   → 401 VDX-401
+//   - Missing or malformed Authorization  → 401 VDX-401
+//   - Token present but wrong value       → 401 VDX-401
+//
+// The comparison is constant-time to prevent timing attacks.
+func (s *Server) requireBootstrapToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Fail-closed: if no token has been configured, every request is
+		// rejected. This prevents accidental open access when the daemon
+		// starts without having called SetBootstrapToken.
+		if s.bootstrapToken == "" {
+			slog.Warn("api: browse auth: no bootstrap token configured — rejecting request",
+				"method", r.Method, "path", r.URL.Path)
+			writeError(w, http.StatusUnauthorized, "VDX-401", "authentication required")
+			return
+		}
+
+		authHeader := r.Header.Get("Authorization")
+		provided := strings.TrimPrefix(authHeader, "Bearer ")
+		if authHeader == "" || provided == authHeader {
+			// Header absent or not a Bearer scheme.
+			slog.Warn("api: browse auth: missing or malformed Authorization header",
+				"method", r.Method, "path", r.URL.Path)
+			writeError(w, http.StatusUnauthorized, "VDX-401", "authentication required")
+			return
+		}
+
+		// Constant-time comparison to prevent timing oracle.
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(s.bootstrapToken)) != 1 {
+			slog.Warn("api: browse auth: token mismatch",
+				"method", r.Method, "path", r.URL.Path)
+			writeError(w, http.StatusUnauthorized, "VDX-401", "authentication required")
+			return
 		}
 
 		next.ServeHTTP(w, r)

@@ -48,10 +48,23 @@ func signedRequest(t *testing.T, method, path, keyID, secret string, body []byte
 // runMiddleware invokes RequireAgent against a no-op handler and returns the
 // recorded response. The handler captures the body that reached it so tests
 // can assert the middleware rebuilt r.Body correctly.
+//
+// Each call gets its own isolated NonceCache so that repeated calls with the
+// same signed request within a single test do not trigger replay rejection.
+// Tests that explicitly want to verify replay behaviour should call
+// runMiddlewareWithCache directly.
 func runMiddleware(t *testing.T, ks *KeyStore, req *http.Request) (*httptest.ResponseRecorder, []byte) {
 	t.Helper()
+	return runMiddlewareWithCache(t, ks, NewNonceCache(), req)
+}
+
+// runMiddlewareWithCache invokes requireAgentWithCache with the supplied
+// NonceCache. Use this in tests that need to share cache state across
+// multiple requests (e.g., replay-detection tests).
+func runMiddlewareWithCache(t *testing.T, ks *KeyStore, nc *NonceCache, req *http.Request) (*httptest.ResponseRecorder, []byte) {
+	t.Helper()
 	var reached []byte
-	handler := RequireAgent(ks)(func(w http.ResponseWriter, r *http.Request) {
+	handler := requireAgentWithCache(ks, nc)(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		reached = b
 		w.WriteHeader(http.StatusOK)
@@ -62,10 +75,12 @@ func runMiddleware(t *testing.T, ks *KeyStore, req *http.Request) (*httptest.Res
 }
 
 // wrapChi mounts the handler inside a chi router so chi.URLParam("project")
-// resolves during scope enforcement tests.
+// resolves during scope enforcement tests. Each call gets a fresh NonceCache
+// so test isolation is preserved.
 func wrapChi(ks *KeyStore, pattern string) http.Handler {
 	r := chi.NewRouter()
-	r.Post(pattern, RequireAgent(ks)(func(w http.ResponseWriter, r *http.Request) {
+	nc := NewNonceCache()
+	r.Post(pattern, requireAgentWithCache(ks, nc)(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	return r

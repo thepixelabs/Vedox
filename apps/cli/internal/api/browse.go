@@ -29,12 +29,23 @@ type dirEntry struct {
 // It returns a list of subdirectories for the given path. This is used by the
 // frontend to implement a folder picker for importing or linking projects.
 //
+// Authentication: the bootstrap token must be supplied as
+//
+//	Authorization: Bearer <token>
+//
+// (enforced by the requireBootstrapToken middleware wired in server.go Mount).
+//
 // Query parameters:
-//   path: absolute path to list. If empty, defaults to the user's home directory
-//         on macOS/Linux or the current drive root on Windows.
+//
+//	path: absolute path to list. If empty, defaults to the user's home directory
+//	      on macOS/Linux or the current drive root on Windows.
 //
 // Errors:
-//   VDX-102: The path is not a directory or could not be read.
+//
+//	VDX-401: No valid bootstrap token supplied (handled by middleware, not here).
+//	VDX-403: Requested path is outside $HOME.
+//	VDX-100: Path could not be resolved to an absolute path.
+//	VDX-102: The path is not a directory or could not be read.
 func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSpace(r.URL.Query().Get("path"))
 
@@ -57,6 +68,16 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Home-directory boundary check (CRIT-02 / FIX-SEC-01 / MED-02).
+	// Reject any path that escapes $HOME so that an authenticated caller
+	// (e.g. a compromised frontend) cannot enumerate /etc, /proc, or other
+	// sensitive directories. withinHomeDir uses filepath.Clean on both paths
+	// to defeat double-dot traversal before the HasPrefix comparison.
+	if !withinHomeDir(abs) {
+		writeError(w, http.StatusForbidden, "VDX-403", "path is outside the allowed home directory boundary")
+		return
+	}
+
 	entries, err := os.ReadDir(abs)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -65,7 +86,10 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		} else if os.IsNotExist(err) {
 			status = http.StatusNotFound
 		}
-		writeError(w, status, "VDX-102", "could not read directory: "+err.Error())
+		// MED-02 fix: strip the absolute path from the error message so that
+		// the OS-level error (which embeds abs) is not leaked to the client.
+		// The operator can correlate via the structured log entry.
+		writeError(w, status, "VDX-102", "could not read directory")
 		return
 	}
 

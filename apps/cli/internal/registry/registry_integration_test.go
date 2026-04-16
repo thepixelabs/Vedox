@@ -28,7 +28,7 @@ func newIntegrationRegistry(t *testing.T) (*registry.FileRegistry, string) {
 		t.Fatalf("mkdir registry dir: %v", err)
 	}
 	path := filepath.Join(regDir, "repos.json")
-	reg, err := registry.NewFileRegistry(path)
+	reg, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("NewFileRegistry: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestIntegration_PausedRepoNotOrphaned(t *testing.T) {
 	// Use a second independent FileRegistry over the same file path to add
 	// the paused repo and then reload the first.
 	reg2path := filepath.Join(testutil.TempDir(t), "repos.json")
-	reg2, err := registry.NewFileRegistry(reg2path)
+	reg2, err := registry.NewFileRegistry(reg2path, nil)
 	if err != nil {
 		t.Fatalf("reg2: %v", err)
 	}

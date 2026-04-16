@@ -17,7 +17,7 @@ func newTempRegistry(t *testing.T) (*registry.FileRegistry, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "repos.json")
-	reg, err := registry.NewFileRegistry(path)
+	reg, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("NewFileRegistry: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestReload(t *testing.T) {
 	path := filepath.Join(dir, "repos.json")
 
 	// Open registry A and add a repo.
-	regA, err := registry.NewFileRegistry(path)
+	regA, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("NewFileRegistry A: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestReload(t *testing.T) {
 
 	// Open a second registry instance B over the same file (simulates a second
 	// process or a SIGHUP reload scenario).
-	regB, err := registry.NewFileRegistry(path)
+	regB, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("NewFileRegistry B: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestOrphanDetection(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "repos.json")
 
-	reg, err := registry.NewFileRegistry(path)
+	reg, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("NewFileRegistry: %v", err)
 	}
@@ -419,7 +419,7 @@ func TestOrphanRestoration(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "repos.json")
 
-	reg, err := registry.NewFileRegistry(path)
+	reg, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("NewFileRegistry: %v", err)
 	}
@@ -460,7 +460,7 @@ func TestConcurrentAccess(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "repos.json")
 
-	reg, err := registry.NewFileRegistry(path)
+	reg, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("NewFileRegistry: %v", err)
 	}
@@ -513,7 +513,7 @@ func TestPersistence(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "repos.json")
 
-	reg1, err := registry.NewFileRegistry(path)
+	reg1, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("reg1 open: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestPersistence(t *testing.T) {
 	}
 
 	// Open a second independent instance — must see the persisted data.
-	reg2, err := registry.NewFileRegistry(path)
+	reg2, err := registry.NewFileRegistry(path, nil)
 	if err != nil {
 		t.Fatalf("reg2 open: %v", err)
 	}

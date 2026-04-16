@@ -9,9 +9,11 @@ import (
 	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
+	"github.com/vedox/vedox/internal/docgraph"
 	"github.com/vedox/vedox/internal/providers"
 	"github.com/vedox/vedox/internal/scanner"
 	"github.com/vedox/vedox/internal/store"
+	"github.com/vedox/vedox/internal/voice"
 )
 
 // Server holds the shared dependencies for all API handlers. It is constructed
@@ -56,6 +58,25 @@ type Server struct {
 	// user-global provider config paths (e.g. ~/.codex/config.toml). Production
 	// code leaves this empty; tests set it to a t.TempDir() for isolation.
 	homeDirOverride string
+
+	// voiceServer is the optional voice pipeline HTTP facade. When non-nil,
+	// Mount registers POST /api/voice/ptt and GET /api/voice/status on the chi
+	// router so that corsMiddleware and loggingMiddleware apply. It is nil in
+	// dev-server mode and when --voice is not passed to the daemon.
+	voiceServer *voice.VoiceServer
+
+	// bootstrapToken is the 64-hex-char daemon token used to authenticate
+	// privileged GET endpoints (e.g. /api/browse). An empty string means
+	// no token has been configured; requireBootstrapToken will return 401
+	// for every request when this is unset (fail-closed). Production code
+	// must call SetBootstrapToken before Mount().
+	bootstrapToken string
+
+	// graphStore is the doc-reference graph store. It is nil when the workspace
+	// db has not been opened (dev-server mode without --graph) or when no
+	// documents have been indexed yet. handleGraph returns 503 when nil.
+	// Inject with SetGraphStore after NewServer.
+	graphStore *docgraph.GraphStore
 }
 
 // SetHomeDirOverride replaces the home directory used for user-global provider
@@ -79,6 +100,32 @@ func (s *Server) SetGlobalDB(g *db.GlobalDB) {
 // leave this nil, which causes the agent handlers to return 503.
 func (s *Server) SetKeyStore(ks providers.KeyIssuer) {
 	s.keyStore = ks
+}
+
+// SetVoiceServer injects the VoiceServer into the API server so that voice
+// routes are registered inside the chi router (and therefore inherit CORS and
+// logging middleware). Call this after NewServer and before Mount. The vs value
+// may be nil — Mount performs a nil-guard and skips voice route registration
+// when no voice pipeline was constructed.
+func (s *Server) SetVoiceServer(vs *voice.VoiceServer) {
+	s.voiceServer = vs
+}
+
+// SetBootstrapToken records the daemon bootstrap token that callers must
+// present on privileged GET endpoints such as /api/browse. Call this after
+// NewServer and before Mount. An empty token keeps the fail-closed default
+// (every request returns 401); callers that genuinely need an open endpoint
+// must explicitly document why before omitting this call.
+func (s *Server) SetBootstrapToken(token string) {
+	s.bootstrapToken = token
+}
+
+// SetGraphStore injects the doc-reference GraphStore into the server. Call
+// this after NewServer when the daemon has successfully opened the workspace
+// db and constructed a GraphStore. Handlers that depend on it check for nil
+// and return 503 if absent, so not calling this is safe in dev-server mode.
+func (s *Server) SetGraphStore(gs *docgraph.GraphStore) {
+	s.graphStore = gs
 }
 
 // userHome returns homeDirOverride when set, otherwise os.UserHomeDir().
@@ -131,7 +178,10 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	r.Get("/api/health", s.handleHealth)
 
 	// Filesystem browsing — used by the frontend folder picker.
-	r.Get("/api/browse", s.handleBrowse)
+	// Requires the bootstrap token (CRIT-02 / FIX-SEC-01): unauthenticated
+	// callers receive 401; paths outside $HOME receive 403 (boundary enforced
+	// inside handleBrowse).
+	r.With(s.requireBootstrapToken).Get("/api/browse", s.handleBrowse)
 
 	// Project listing — returns results from the last completed scan (or runs
 	// a synchronous scan on first call if no cached results exist).
@@ -224,6 +274,17 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	r.Post("/api/agent/install", s.handleAgentInstall)
 	r.Post("/api/agent/uninstall", s.handleAgentUninstall)
 
+	// User preferences — persisted to ~/.vedox/user-prefs.json.
+	// PUT uses PATCH semantics (R3): only supplied top-level keys are overwritten;
+	// all other keys in the stored file are preserved.
+	r.Get("/api/settings", s.handleGetSettings)
+	r.Put("/api/settings", s.handlePutSettings)
+
+	// Doc reference graph — returns Cytoscape-compatible {nodes, edges} for the
+	// given project. Read-only; no auth required at alpha (consistent with all
+	// other project GET endpoints; bootstrap token scope is a GA gate).
+	r.Get("/api/graph", s.handleGraph)
+
 	// Inline code preview — resolves a vedox:// URL and returns source content
 	// for Shiki rendering. Read-only; no agent auth required.
 	r.Get("/api/preview", s.handlePreview)
@@ -247,6 +308,14 @@ func (s *Server) Mount(mux *http.ServeMux) {
 		pr.Put("/codex/mcp", s.handlePutCodexMCP)
 		pr.Put("/codex/settings", s.handlePutCodexSettings)
 	})
+
+	// Voice pipeline routes — only wired when a VoiceServer has been injected
+	// via SetVoiceServer. Both endpoints inherit corsMiddleware and
+	// loggingMiddleware from the chi router's middleware stack (HIGH-03 fix).
+	if s.voiceServer != nil {
+		r.Post("/api/voice/ptt", s.voiceServer.HandlePTT)
+		r.Get("/api/voice/status", s.voiceServer.HandleStatus)
+	}
 
 	// Mount the chi router under /api/ on the stdlib mux. Everything that
 	// hits /api/* will be dispatched by chi.

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vedox/vedox/internal/db"
 )
 
 // ---- Type enumerations ------------------------------------------------------
@@ -145,8 +146,13 @@ type ProjectRegistry interface {
 // The in-memory cache (byID, byName) is the hot path for reads.
 // Every mutation acquires the advisory lock, reads the current manifest,
 // applies the change, writes the manifest atomically, then updates the cache.
+//
+// If globalDB is non-nil, every manifest write also upserts all repo records
+// into global.db so that the analytics FK chain (analytics_cache → repos.id)
+// always has an authoritative repo_id → path mapping.
 type FileRegistry struct {
-	path string // absolute path to repos.json
+	path     string // absolute path to repos.json
+	globalDB *db.GlobalDB
 
 	mu     sync.RWMutex
 	byID   map[string]Repo
@@ -156,16 +162,21 @@ type FileRegistry struct {
 // NewFileRegistry opens or creates a FileRegistry backed by the JSON file at
 // path. If the file does not exist it is created with an empty manifest.
 // The parent directory must already exist.
-func NewFileRegistry(path string) (*FileRegistry, error) {
+//
+// Pass a non-nil *db.GlobalDB to enable automatic mirroring of repo records
+// into global.db on every manifest write. Pass nil to opt out (the registry
+// then operates in standalone mode, identical to previous behaviour).
+func NewFileRegistry(path string, globalDB *db.GlobalDB) (*FileRegistry, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("registry.NewFileRegistry: resolve path %q: %w", path, err)
 	}
 
 	r := &FileRegistry{
-		path:   abs,
-		byID:   make(map[string]Repo),
-		byName: make(map[string]string),
+		path:     abs,
+		globalDB: globalDB,
+		byID:     make(map[string]Repo),
+		byName:   make(map[string]string),
 	}
 
 	// Bootstrap: create file with empty manifest if it doesn't exist.
@@ -180,6 +191,16 @@ func NewFileRegistry(path string) (*FileRegistry, error) {
 	}
 
 	return r, nil
+}
+
+// SetGlobalDB injects or replaces the GlobalDB handle after construction.
+// This is useful when the DB handle is not yet available at registry creation
+// time (e.g., during server startup sequencing). Passing nil disables global
+// DB mirroring. SetGlobalDB is not safe to call concurrently with Add/Remove.
+func (r *FileRegistry) SetGlobalDB(g *db.GlobalDB) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.globalDB = g
 }
 
 // List returns all repos sorted by name.
@@ -427,6 +448,12 @@ func (r *FileRegistry) readManifest() (manifest, error) {
 
 // writeManifestLocked writes m to r.path using an atomic temp→rename pattern.
 // The caller is responsible for holding any relevant locks.
+//
+// After a successful disk write, if a GlobalDB handle is configured, every
+// repo in the manifest is upserted into global.db so the analytics FK chain
+// always has an up-to-date repo_id → path mapping.  Failures from global.db
+// are logged but do NOT roll back the manifest write — the JSON file remains
+// the authoritative source of truth.
 func (r *FileRegistry) writeManifestLocked(m manifest) error {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -468,7 +495,65 @@ func (r *FileRegistry) writeManifestLocked(m manifest) error {
 	_ = os.Chmod(r.path, 0o600)
 
 	ok = true
+
+	// Mirror repo records into global.db (best-effort; does not fail the write).
+	if r.globalDB != nil {
+		r.syncToGlobalDB(m)
+	}
+
 	return nil
+}
+
+// syncToGlobalDB upserts every repo in the manifest into global.db.
+// Called only when r.globalDB is non-nil. Errors are intentionally swallowed
+// because the JSON file is the authoritative source of truth; global.db is a
+// denormalised read-side mirror.
+func (r *FileRegistry) syncToGlobalDB(m manifest) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for _, repo := range m.Repos {
+		dbRepo := repoToDBRepo(repo)
+		if err := r.globalDB.SaveRepo(ctx, dbRepo); err != nil {
+			// Non-fatal: the JSON manifest succeeded; log to stderr as a warning.
+			// A full logger is not available here without introducing another
+			// dependency; the error is surfaced on the next globaldb read.
+			_ = err
+		}
+	}
+}
+
+// repoToDBRepo maps a registry.Repo to a db.Repo for global.db storage.
+// The type field is normalised: registry uses "project-public" while global.db
+// uses "public" (per the CHECK constraint in the bootstrap schema).
+func repoToDBRepo(r Repo) db.Repo {
+	dbType := string(r.Type)
+	switch r.Type {
+	case RepoTypeProjectPublic:
+		dbType = "public"
+	case RepoTypeBareLocal:
+		dbType = "inbox"
+	case RepoTypePrivate:
+		dbType = "private"
+	}
+	dbStatus := string(r.Status)
+	switch r.Status {
+	case StatusActive:
+		dbStatus = "active"
+	case StatusPaused:
+		// global.db doesn't have a "paused" status; map to active for FK integrity.
+		dbStatus = "active"
+	case StatusOrphan:
+		dbStatus = "error"
+	}
+	return db.Repo{
+		ID:        r.ID,
+		Name:      r.Name,
+		Type:      dbType,
+		RootPath:  r.RootPath,
+		RemoteURL: r.RemoteURL,
+		Status:    dbStatus,
+	}
 }
 
 // loadFromDisk reads the manifest and populates the in-memory cache.

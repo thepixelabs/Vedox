@@ -82,7 +82,7 @@ func runSystemInit(cmd *cobra.Command) error {
 		// NewFileRegistry creates the file with an empty manifest if absent.
 		// On --force we re-open which is effectively a no-op for an already valid
 		// manifest, but it re-validates the JSON and refreshes the in-memory cache.
-		if _, regErr := registry.NewFileRegistry(reposPath); regErr != nil {
+		if _, regErr := registry.NewFileRegistry(reposPath, nil); regErr != nil {
 			return fmt.Errorf("system init: create repos.json: %w", regErr)
 		}
 	}

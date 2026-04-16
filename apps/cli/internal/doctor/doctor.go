@@ -384,7 +384,7 @@ func checkRegistryValid(cfg Config) checkFn {
 			}
 		}
 
-		reg, err := registry.NewFileRegistry(reposPath)
+		reg, err := registry.NewFileRegistry(reposPath, nil)
 		if err != nil {
 			return Check{
 				Name:    "registry valid",

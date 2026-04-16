@@ -36,7 +36,8 @@ const maxAgentBodyBytes = 2 * 1024 * 1024
 type Middleware func(http.HandlerFunc) http.HandlerFunc
 
 // RequireAgent returns middleware that enforces HMAC-SHA256 authentication
-// against the given KeyStore on all requests it wraps.
+// against the given KeyStore on all requests it wraps. It uses the
+// process-wide nonce cache to reject replayed requests.
 //
 // Validation order (fail-closed at every step):
 //  1. Key ID header present and resolves to a known, non-revoked APIKey.
@@ -45,6 +46,10 @@ type Middleware func(http.HandlerFunc) http.HandlerFunc
 //     downstream handler can still read it.
 //  4. Expected HMAC is computed from (method, path, timestamp, bodyHash).
 //  5. Provided signature compared with SecureEqual.
+//  5b. Nonce cache check: the (keyID, timestamp, bodyHash) tuple must not
+//      have been seen within the last 10 minutes. Replays return HTTP 409
+//      with VDX-307 — distinct from VDX-300 so legitimate agents can
+//      distinguish a replay rejection from a credential error.
 //  6. Scope enforcement: key.Project (if set) must match the chi "project"
 //     URL param, and key.PathPrefix (if set) must be a prefix of r.URL.Path.
 //     Scope violations return VDX-301 (403), not VDX-300 (401) — the agent
@@ -55,6 +60,12 @@ type Middleware func(http.HandlerFunc) http.HandlerFunc
 // VDX-300 message — we do not reveal which specific check failed, to avoid
 // building an oracle an attacker can use to probe the system.
 func RequireAgent(ks *KeyStore) Middleware {
+	return requireAgentWithCache(ks, globalNonceCache)
+}
+
+// requireAgentWithCache is the internal constructor used by RequireAgent and
+// by tests that need an isolated NonceCache to avoid cross-test contamination.
+func requireAgentWithCache(ks *KeyStore, nc *NonceCache) Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			// 1. Key ID lookup.
@@ -124,6 +135,22 @@ func RequireAgent(ks *KeyStore) Middleware {
 			provided := r.Header.Get(HeaderSignature)
 			if provided == "" || !SecureEqual(expected, provided) {
 				rejectAuth(w, r, keyID, "signature mismatch")
+				return
+			}
+
+			// 5b. Nonce / replay check. The (keyID, timestamp, bodyHash) tuple
+			//     is recorded in the nonce cache on the first valid request.
+			//     Any identical replay within the 10-minute TTL window is
+			//     rejected with 409 Conflict (VDX-307) — a separate code from
+			//     VDX-300 so agents can distinguish replay rejection from a
+			//     credential error and know not to retry with the same request.
+			if !nc.CheckAndRecord(keyID, ts, bodyHash) {
+				slog.Warn("agentauth: replay rejected",
+					"method", r.Method,
+					"path", r.URL.Path,
+					"keyId", keyID,
+				)
+				writeVDXError(w, http.StatusConflict, vdxerr.ReplayedRequest())
 				return
 			}
 

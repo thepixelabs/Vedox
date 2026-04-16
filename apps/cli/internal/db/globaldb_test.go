@@ -349,6 +349,126 @@ func TestIncrementDailyEvent_EmptyArgs(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// SaveRepo (alias for UpsertRepo) — FIX-ARCH-06
+// ---------------------------------------------------------------------------
+
+// TestSaveRepo_RoundTrip verifies that SaveRepo inserts and GetRepo retrieves
+// the record, confirming the alias delegates correctly to UpsertRepo.
+func TestSaveRepo_RoundTrip(t *testing.T) {
+	ctx := context.Background()
+	g := openGlobalDB(t)
+
+	r := sampleRepo("save-001")
+	if err := g.SaveRepo(ctx, r); err != nil {
+		t.Fatalf("SaveRepo: %v", err)
+	}
+
+	out, err := g.GetRepo(ctx, "save-001")
+	if err != nil {
+		t.Fatalf("GetRepo after SaveRepo: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected repo, got nil")
+	}
+	if out.Name != r.Name {
+		t.Errorf("Name = %q, want %q", out.Name, r.Name)
+	}
+	if out.RootPath != r.RootPath {
+		t.Errorf("RootPath = %q, want %q", out.RootPath, r.RootPath)
+	}
+}
+
+// TestSaveRepo_Update verifies that a second SaveRepo call with the same ID
+// updates the existing row (upsert semantics).
+func TestSaveRepo_Update(t *testing.T) {
+	ctx := context.Background()
+	g := openGlobalDB(t)
+
+	r := sampleRepo("save-upd")
+	if err := g.SaveRepo(ctx, r); err != nil {
+		t.Fatalf("initial SaveRepo: %v", err)
+	}
+
+	r.Status = "archived"
+	r.Name = "updated-by-save"
+	if err := g.SaveRepo(ctx, r); err != nil {
+		t.Fatalf("update SaveRepo: %v", err)
+	}
+
+	out, err := g.GetRepo(ctx, "save-upd")
+	if err != nil {
+		t.Fatalf("GetRepo: %v", err)
+	}
+	if out.Status != "archived" {
+		t.Errorf("Status = %q, want archived", out.Status)
+	}
+	if out.Name != "updated-by-save" {
+		t.Errorf("Name = %q, want updated-by-save", out.Name)
+	}
+
+	// Row count must be exactly 1.
+	all, _ := g.ListRepos(ctx, "")
+	if len(all) != 1 {
+		t.Errorf("expected 1 row after two saves of same ID, got %d", len(all))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Global migration framework — FIX-ARCH-06
+// ---------------------------------------------------------------------------
+
+// TestGlobalMigration_1001ReposApplied verifies that opening a fresh global.db
+// applies the 1001_repos.sql migration and records version 1001 in
+// schema_version.
+func TestGlobalMigration_1001ReposApplied(t *testing.T) {
+	g := openGlobalDB(t)
+
+	// schema_version must include version 1001 after migration.
+	var count int
+	err := g.ReadDB().QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM schema_version WHERE version = 1001`,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("query schema_version: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected schema_version row for version 1001, got %d rows", count)
+	}
+}
+
+// TestGlobalMigration_Idempotent verifies that opening the same global.db file
+// twice does not produce duplicate schema_version entries for version 1001.
+func TestGlobalMigration_Idempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "global.db")
+
+	for i := 0; i < 2; i++ {
+		g, err := OpenGlobalDB(path)
+		if err != nil {
+			t.Fatalf("open #%d: %v", i+1, err)
+		}
+		_ = g.Close()
+	}
+
+	g, err := OpenGlobalDB(path)
+	if err != nil {
+		t.Fatalf("final open: %v", err)
+	}
+	defer g.Close()
+
+	var count int
+	if err := g.ReadDB().QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*) FROM schema_version WHERE version = 1001`,
+	).Scan(&count); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 version-1001 row after three opens, got %d", count)
+	}
+}
+
 // TestIncrementDailyEvent_DifferentDates verifies that the same kind on
 // different dates is stored as separate rows.
 func TestIncrementDailyEvent_DifferentDates(t *testing.T) {

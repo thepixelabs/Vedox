@@ -30,6 +30,24 @@ func newOnboardingFixture(t *testing.T) *reposFixture {
 	return newReposFixture(t)
 }
 
+// homeTempDir creates a temporary directory inside the user's home directory
+// and registers it for cleanup. Required because t.TempDir() on macOS resolves
+// to /var/folders/... which is outside $HOME, so the withinHomeDir guard would
+// reject it.
+func homeTempDir(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	dir, err := os.MkdirTemp(home, ".vedox-test-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp in $HOME: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/repos/create
 // ---------------------------------------------------------------------------
@@ -39,7 +57,7 @@ func newOnboardingFixture(t *testing.T) *reposFixture {
 func TestCreateRepoWithInit_HappyPath(t *testing.T) {
 	f := newOnboardingFixture(t)
 
-	newRepoPath := filepath.Join(t.TempDir(), "my-new-docs")
+	newRepoPath := filepath.Join(homeTempDir(t), "my-new-docs")
 
 	resp := f.post(t, "/api/repos/create", map[string]interface{}{
 		"name": "my-new-docs",
@@ -85,7 +103,7 @@ func TestCreateRepoWithInit_HappyPath(t *testing.T) {
 func TestCreateRepoWithInit_DirectoryAlreadyExists(t *testing.T) {
 	f := newOnboardingFixture(t)
 
-	existingDir := t.TempDir()
+	existingDir := homeTempDir(t)
 
 	resp := f.post(t, "/api/repos/create", map[string]interface{}{
 		"name": "existing-dir",
@@ -107,7 +125,7 @@ func TestCreateRepoWithInit_DirectoryAlreadyExists(t *testing.T) {
 func TestCreateRepoWithInit_PrivateBoolFallback(t *testing.T) {
 	f := newOnboardingFixture(t)
 
-	newRepoPath := filepath.Join(t.TempDir(), "bool-fallback")
+	newRepoPath := filepath.Join(homeTempDir(t), "bool-fallback")
 	resp := f.post(t, "/api/repos/create", map[string]interface{}{
 		"name":    "bool-fallback",
 		"path":    newRepoPath,
@@ -152,7 +170,7 @@ func TestCreateRepoWithInit_MissingPath(t *testing.T) {
 func TestCreateRepoWithInit_InvalidType(t *testing.T) {
 	f := newOnboardingFixture(t)
 	resp := f.post(t, "/api/repos/create", map[string]interface{}{
-		"name": "x", "path": t.TempDir(), "type": "enterprise",
+		"name": "x", "path": homeTempDir(t), "type": "enterprise",
 	})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
@@ -212,7 +230,7 @@ func TestCreateRepoWithInit_NoGlobalDB(t *testing.T) {
 func TestRegisterRepo_HappyPath(t *testing.T) {
 	f := newOnboardingFixture(t)
 
-	repoDir := t.TempDir()
+	repoDir := homeTempDir(t)
 	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
@@ -250,7 +268,7 @@ func TestRegisterRepo_NameDefaults(t *testing.T) {
 	f := newOnboardingFixture(t)
 
 	// Create a subdirectory with a known name so filepath.Base is predictable.
-	parent := t.TempDir()
+	parent := homeTempDir(t)
 	repoDir := filepath.Join(parent, "inferred-name")
 	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -276,7 +294,7 @@ func TestRegisterRepo_NameDefaults(t *testing.T) {
 func TestRegisterRepo_DefaultTypeIsPrivate(t *testing.T) {
 	f := newOnboardingFixture(t)
 
-	repoDir := t.TempDir()
+	repoDir := homeTempDir(t)
 	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -302,7 +320,7 @@ func TestRegisterRepo_DefaultTypeIsPrivate(t *testing.T) {
 func TestRegisterRepo_NotAGitRepo(t *testing.T) {
 	f := newOnboardingFixture(t)
 
-	plainDir := t.TempDir()
+	plainDir := homeTempDir(t)
 	resp := f.post(t, "/api/repos/register", map[string]interface{}{
 		"path": plainDir,
 	})
@@ -339,7 +357,7 @@ func TestRegisterRepo_MissingPath(t *testing.T) {
 func TestRegisterRepo_InvalidType(t *testing.T) {
 	f := newOnboardingFixture(t)
 
-	repoDir := t.TempDir()
+	repoDir := homeTempDir(t)
 	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -377,6 +395,49 @@ func TestRegisterRepo_NoGlobalDB(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Security: home-directory boundary guard (HIGH-01 / HIGH-04 — FIX-SEC-03)
+// ---------------------------------------------------------------------------
+
+// TestCreateRepoWithInit_OutsideHome rejects a path outside $HOME with 400.
+func TestCreateRepoWithInit_OutsideHome(t *testing.T) {
+	f := newOnboardingFixture(t)
+
+	// /tmp is virtually never inside $HOME on macOS or Linux.
+	outsidePath := "/tmp/vedox-sec-test-outside-home"
+	resp := f.post(t, "/api/repos/create", map[string]interface{}{
+		"name": "evil",
+		"path": outsidePath,
+		"type": "private",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for path outside $HOME (body=%s)",
+			resp.StatusCode, drainBody(t, resp))
+	}
+	body := drainBody(t, resp)
+	if !strings.Contains(body, "VDX-400") {
+		t.Errorf("expected VDX-400 in body, got: %s", body)
+	}
+}
+
+// TestRegisterRepo_OutsideHome rejects a path outside $HOME with 400.
+func TestRegisterRepo_OutsideHome(t *testing.T) {
+	f := newOnboardingFixture(t)
+
+	resp := f.post(t, "/api/repos/register", map[string]interface{}{
+		"path": "/tmp/vedox-sec-test-outside-home",
+		"name": "evil",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for path outside $HOME (body=%s)",
+			resp.StatusCode, drainBody(t, resp))
+	}
+	body := drainBody(t, resp)
+	if !strings.Contains(body, "VDX-400") {
+		t.Errorf("expected VDX-400 in body, got: %s", body)
 	}
 }
 

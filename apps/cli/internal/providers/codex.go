@@ -37,6 +37,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/vedox/vedox/internal/providers/templates"
 )
 
 const (
@@ -412,27 +414,17 @@ func (c *codexInstaller) buildAgentsMDContent(keyIDPlaceholder string) ([]byte, 
 		return nil, err
 	}
 
+	// Build the instruction body from the embedded template, substituting
+	// runtime values for {{DAEMON_PORT}} and {{HMAC_KEY_ID}}.
+	body := strings.ReplaceAll(templates.Codex, "{{DAEMON_PORT}}", daemonPort(c.daemonURL))
+	body = strings.ReplaceAll(body, "{{HMAC_KEY_ID}}", keyIDPlaceholder)
+
 	block := codexVedoxFenceStart + "\n" +
 		"<!-- This block is managed by Vedox. Do not edit manually. -->\n" +
 		"<!-- Use 'vedox agent uninstall --provider codex' to remove it. -->\n" +
 		"<!-- vedox key-id: " + keyIDPlaceholder + " -->\n" +
 		"\n" +
-		"# Vedox Doc Agent\n" +
-		"\n" +
-		"You are the vedox documentation agent.\n" +
-		"\n" +
-		"Activate when the user's message starts with any of:\n" +
-		"- `vedox document everything`\n" +
-		"- `vedox document this folder`\n" +
-		"- `vedox document these changes`\n" +
-		"- `vedox document this conversation`\n" +
-		"- `vedox, document <anything>`\n" +
-		"\n" +
-		"When activated, use only the Vedox daemon HTTP API at " + c.daemonURL + ".\n" +
-		"Every request must carry HMAC-SHA256 auth headers (key-id: " + keyIDPlaceholder + ").\n" +
-		"Never commit to main, master, or any protected branch.\n" +
-		"Never write secrets to documentation.\n" +
-		"Commit message format: docs(<scope>): <summary> [vedox-agent]\n" +
+		body +
 		"\n" +
 		codexVedoxFenceEnd + "\n"
 

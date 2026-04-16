@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/vedox/vedox/internal/providers/templates"
 )
 
 const (
@@ -340,66 +342,20 @@ func (c *copilotInstaller) buildInstructionsContent() ([]byte, error) {
 // comments so the installer can locate and update it deterministically.
 //
 // Degraded mode means Copilot reads these rules as plain instructions —
-// it cannot call the Vedox daemon HTTP API directly.  The routing rules are
+// it cannot call the Vedox daemon HTTP API directly. The routing rules are
 // written as prose so Copilot follows them when composing documentation in
 // the editor.
+//
+// The block body is loaded from the embedded templates/copilot.md file.
+// {{DAEMON_URL}} is the only template variable substituted here.
 func (c *copilotInstaller) vedoxSection() string {
+	body := strings.ReplaceAll(templates.Copilot, "{{DAEMON_URL}}", c.daemonURL)
+
 	return copilotSectionStart + "\n" +
 		"<!-- This section is managed by Vedox. Do not edit manually. -->\n" +
 		"<!-- Use 'vedox agent uninstall --provider copilot' to remove it. -->\n" +
 		"\n" +
-		copilotSectionHeading + "\n" +
-		"\n" +
-		"You are operating in **read-only degraded mode** as the Vedox Documentation\n" +
-		"Agent. GitHub Copilot does not support MCP tool calls in this version, so you\n" +
-		"cannot call the Vedox daemon HTTP API directly. Follow the routing rules below\n" +
-		"as prose guidance when helping the user write or organize documentation.\n" +
-		"\n" +
-		"### Activation\n" +
-		"\n" +
-		"Enter documentation mode when the user's message starts with any of:\n" +
-		"\n" +
-		"- `vedox document everything`\n" +
-		"- `vedox document this folder`\n" +
-		"- `vedox document these changes`\n" +
-		"- `vedox document this conversation`\n" +
-		"- `vedox, document <anything>`\n" +
-		"\n" +
-		"Do not activate on any other phrase. Do not start documentation as a side\n" +
-		"effect of another task.\n" +
-		"\n" +
-		"### Routing rules\n" +
-		"\n" +
-		"When the user triggers documentation mode, classify each document as public\n" +
-		"or private and suggest the correct target path:\n" +
-		"\n" +
-		"- **Public docs** (ADRs, how-tos, runbooks, API references, release notes)\n" +
-		"  → suggest placing in the project-scoped documentation repo or the `docs/`\n" +
-		"  subtree of the current project.\n" +
-		"\n" +
-		"- **Private docs** (meeting notes, compensation details, client-specific\n" +
-		"  information, credentials, internal strategy)\n" +
-		"  → suggest placing in the user's private documentation repo. If multiple\n" +
-		"  private repos are registered, ask the user which one to use.\n" +
-		"\n" +
-		"When confidence in visibility classification is low, ask the user before\n" +
-		"suggesting a destination.\n" +
-		"\n" +
-		"### Style\n" +
-		"\n" +
-		"- Pixelabs brand voice for public docs: lowercase marketing, `./unix` CTAs,\n" +
-		"  concrete imagery, no fluff, no emoji.\n" +
-		"- Neutral professional prose for private docs.\n" +
-		"- Commit message format: `docs(<scope>): <summary> [vedox-agent]`\n" +
-		"- Do not commit directly to `main`, `master`, or any protected branch.\n" +
-		"- Always show a diff preview and confirm with the user before committing.\n" +
-		"\n" +
-		"### Daemon status\n" +
-		"\n" +
-		"The Vedox daemon runs at " + c.daemonURL + ". You cannot call it directly\n" +
-		"from Copilot. If the user asks you to commit documentation, guide them to\n" +
-		"run `vedox server` and use the Vedox editor, or run the Claude Code or Codex\n" +
-		"provider where tool-call support is available.\n" +
+		body +
 		"\n" +
 		copilotSectionEnd + "\n"
 }

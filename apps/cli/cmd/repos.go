@@ -31,7 +31,7 @@ func openRegistry() (*registry.FileRegistry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return registry.NewFileRegistry(path)
+	return registry.NewFileRegistry(path, nil)
 }
 
 // isGitRepo returns true if path contains a .git directory or file.

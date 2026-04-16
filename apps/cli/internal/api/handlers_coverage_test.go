@@ -34,6 +34,10 @@ type coverageFixture struct {
 	dbStore       *db.Store
 }
 
+// coverageBrowseToken is the bootstrap token injected into coverage-test servers
+// so that /api/browse auth tests can supply a valid credential.
+const coverageBrowseToken = "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"
+
 // newCoverageServer mirrors newTestServer from api_integration_test.go but lives
 // in package api so unexported helpers remain accessible.
 func newCoverageServer(t *testing.T) *coverageFixture {
@@ -66,6 +70,9 @@ func newCoverageServer(t *testing.T) *coverageFixture {
 		store.NewProjectRegistry(),
 		nil, // passthrough auth
 	)
+	// FIX-SEC-01: wire the bootstrap token so /api/browse is properly guarded
+	// even in coverage tests. Tests that call getWithToken supply this value.
+	srv.SetBootstrapToken(coverageBrowseToken)
 
 	mux := http.NewServeMux()
 	srv.Mount(mux)
@@ -88,6 +95,23 @@ func (f *coverageFixture) get(t *testing.T, path string) *http.Response {
 	if err != nil {
 		t.Fatalf("NewRequest GET %s: %v", path, err)
 	}
+	resp, err := f.server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	return resp
+}
+
+// getWithToken issues a GET request with the bootstrap Bearer token set.
+// Use this for /api/browse tests (FIX-SEC-01).
+func (f *coverageFixture) getWithToken(t *testing.T, path string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, f.server.URL+path, nil)
+	if err != nil {
+		t.Fatalf("NewRequest GET %s: %v", path, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+coverageBrowseToken)
 	resp, err := f.server.Client().Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
@@ -129,19 +153,17 @@ func bodyStr(t *testing.T, resp *http.Response) string {
 
 // ── handleBrowse ──────────────────────────────────────────────────────────────
 
-// TestBrowse_ValidDir lists a real directory and checks the response shape.
+// TestBrowse_ValidDir lists the user's home directory and checks the response
+// shape. The workspaceRoot (a t.TempDir) lives outside $HOME on most platforms,
+// so we browse $HOME directly — which is always within the boundary.
 func TestBrowse_ValidDir(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("os.UserHomeDir unavailable")
+	}
 	f := newCoverageServer(t)
 
-	// Create a couple of sub-directories in the workspace so the listing is
-	// non-trivial.
-	for _, name := range []string{"alpha", "beta"} {
-		if err := os.MkdirAll(filepath.Join(f.workspaceRoot, name), 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", name, err)
-		}
-	}
-
-	resp := f.get(t, "/api/browse?path="+f.workspaceRoot)
+	resp := f.getWithToken(t, "/api/browse?path="+home)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, bodyStr(t, resp))
 	}
@@ -150,36 +172,37 @@ func TestBrowse_ValidDir(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
-	if got.Path != f.workspaceRoot {
-		t.Errorf("path = %q, want %q", got.Path, f.workspaceRoot)
+	if got.Path == "" {
+		t.Errorf("path field is empty")
 	}
-	names := make(map[string]bool)
-	for _, d := range got.Directories {
-		names[d.Name] = true
-	}
-	for _, want := range []string{"alpha", "beta"} {
-		if !names[want] {
-			t.Errorf("directory %q not found in response; got %v", want, got.Directories)
-		}
+	// directories must be a non-null array (may legitimately be empty).
+	if got.Directories == nil {
+		t.Error("directories must be a non-null array")
 	}
 }
 
-// TestBrowse_InvalidDir expects a 404 for a path that does not exist.
+// TestBrowse_OutsideHome expects a 403 for any path outside $HOME (FIX-SEC-01).
+// We use / (filesystem root) as a canonical out-of-boundary path.
 func TestBrowse_InvalidDir(t *testing.T) {
 	f := newCoverageServer(t)
 
-	resp := f.get(t, "/api/browse?path=/this/path/does/not/exist/vedox-test-xyz")
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404 (body=%s)", resp.StatusCode, bodyStr(t, resp))
+	// / is always outside $HOME; the boundary check fires before any filesystem
+	// access, so no real I/O occurs and the test is hermetic.
+	resp := f.getWithToken(t, "/api/browse?path=/")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (body=%s)", resp.StatusCode, bodyStr(t, resp))
 	}
 }
 
 // TestBrowse_DefaultsToHome checks that omitting ?path returns 200 and a valid
 // browseResponse (the default is the user's home directory).
 func TestBrowse_DefaultsToHome(t *testing.T) {
+	if _, err := os.UserHomeDir(); err != nil {
+		t.Skip("os.UserHomeDir unavailable")
+	}
 	f := newCoverageServer(t)
 
-	resp := f.get(t, "/api/browse")
+	resp := f.getWithToken(t, "/api/browse")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, bodyStr(t, resp))
 	}

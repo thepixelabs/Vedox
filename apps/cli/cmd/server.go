@@ -278,15 +278,20 @@ func runForeground(p daemon.Paths) error {
 		aggregator *analytics.Aggregator
 	)
 
+	// Construct the API server. Mount is deferred until after the voice pipeline
+	// is wired so that voice routes are registered on the chi router before the
+	// router is mounted on the stdlib mux.
+	var apiServer *api.Server
 	if docStore != nil {
-		apiServer := api.NewServer(docStore, wsDB, workspaceRoot, jobStore, aiJobStore, projectRegistry, requireAgent)
+		apiServer = api.NewServer(docStore, wsDB, workspaceRoot, jobStore, aiJobStore, projectRegistry, requireAgent)
 		if globalDB != nil {
 			apiServer.SetGlobalDB(globalDB)
 		}
 		if ks != nil {
 			apiServer.SetKeyStore(ks)
 		}
-		apiServer.Mount(mux)
+		// FIX-SEC-01: wire the bootstrap token so /api/browse requires auth.
+		apiServer.SetBootstrapToken(token)
 	}
 
 	// Root placeholder.
@@ -313,17 +318,25 @@ func runForeground(p daemon.Paths) error {
 		} else {
 			voicePipeline = vPipeline
 
-			// Register voice HTTP endpoints before the server starts accepting
-			// connections.  VoiceServer.Mount uses http.ServeMux patterns
-			// (method + path), which require Go 1.22+.
+			// Inject the VoiceServer into the API server so that both voice
+			// endpoints are registered on the chi router (and therefore inherit
+			// corsMiddleware and loggingMiddleware). FIX-SEC-02 / HIGH-03.
 			vServer := voice.NewVoiceServer(voicePipeline)
-			vServer.Mount(mux)
+			if apiServer != nil {
+				apiServer.SetVoiceServer(vServer)
+			}
 
 			slog.Info("voice: enabled (stub mode — install whisper model for real STT)")
 			if serverStartFlags.foreground {
 				fmt.Println("voice: enabled (stub mode — install whisper model for real STT)")
 			}
 		}
+	}
+
+	// Mount the API server now that all optional dependencies (voice, globalDB,
+	// keyStore) have been injected.
+	if apiServer != nil {
+		apiServer.Mount(mux)
 	}
 
 	srv := &http.Server{
@@ -361,7 +374,7 @@ func runForeground(p daemon.Paths) error {
 
 	// §7 Multi-repo registry — open the global repos.json for SIGHUP-driven reload.
 	reposJSONPath := filepath.Join(p.Home, "repos.json")
-	repoRegistry, regErr := registry.NewFileRegistry(reposJSONPath)
+	repoRegistry, regErr := registry.NewFileRegistry(reposJSONPath, globalDB)
 	if regErr != nil {
 		slog.Warn("could not open repo registry; SIGHUP reload unavailable", "error", regErr)
 	}

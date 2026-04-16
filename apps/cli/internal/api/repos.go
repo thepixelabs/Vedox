@@ -216,6 +216,15 @@ func (s *Server) handleCreateRepoWithInit(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Security: HIGH-01 — only allow repo creation inside the user's home
+	// directory. This prevents CORS-spoofed requests from writing arbitrary
+	// directories anywhere on the filesystem.
+	if !withinHomeDir(absPath) {
+		writeError(w, http.StatusBadRequest, "VDX-400",
+			"path must be within your home directory")
+		return
+	}
+
 	// Derive type. Legacy "private" boolean takes lower priority than explicit type.
 	repoType := req.Type
 	if repoType == "" {
@@ -326,6 +335,15 @@ func (s *Server) handleRegisterRepo(w http.ResponseWriter, r *http.Request) {
 	absPath, err := filepath.Abs(expandTilde(req.Path))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "VDX-400", "path could not be resolved to an absolute path")
+		return
+	}
+
+	// Security: HIGH-04 — only allow registering repos inside the user's home
+	// directory. This prevents out-of-bounds path registration via spoofed
+	// requests.
+	if !withinHomeDir(absPath) {
+		writeError(w, http.StatusBadRequest, "VDX-400",
+			"path must be within your home directory")
 		return
 	}
 

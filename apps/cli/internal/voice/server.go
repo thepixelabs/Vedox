@@ -74,13 +74,30 @@ func (vs *VoiceServer) SetLastCommand(cmd string) {
 	vs.mu.Unlock()
 }
 
-// Mount registers the voice HTTP endpoints on mux.
+// HandlePTT is the exported HTTP handler for POST /api/voice/ptt.
+// In production it is registered on the chi router by api.Server.Mount so
+// that corsMiddleware and loggingMiddleware apply (FIX-SEC-02 / HIGH-03).
+func (vs *VoiceServer) HandlePTT(w http.ResponseWriter, r *http.Request) {
+	vs.handlePTT(w, r)
+}
+
+// HandleStatus is the exported HTTP handler for GET /api/voice/status.
+// In production it is registered on the chi router by api.Server.Mount so
+// that corsMiddleware and loggingMiddleware apply (FIX-SEC-02 / HIGH-03).
+func (vs *VoiceServer) HandleStatus(w http.ResponseWriter, r *http.Request) {
+	vs.handleStatus(w, r)
+}
+
+// Mount registers the voice HTTP endpoints directly on a plain http.ServeMux.
+// This is provided for tests and tooling that operate outside the chi router.
+// Production code must NOT call this — use api.Server.SetVoiceServer instead
+// so that CORS and logging middleware are applied via the chi router.
 //
 //	POST /api/voice/ptt
 //	GET  /api/voice/status
 func (vs *VoiceServer) Mount(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/voice/ptt", vs.handlePTT)
-	mux.HandleFunc("GET /api/voice/status", vs.handleStatus)
+	mux.HandleFunc("POST /api/voice/ptt", vs.HandlePTT)
+	mux.HandleFunc("GET /api/voice/status", vs.HandleStatus)
 }
 
 // ---------------------------------------------------------------------------
