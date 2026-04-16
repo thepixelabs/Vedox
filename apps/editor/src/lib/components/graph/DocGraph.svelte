@@ -108,25 +108,25 @@
       : []
   );
 
-  const visibleNodes = $derived(() => {
-    if (!graphData) return [];
+  const visibleNodes = $derived.by(() => {
+    if (!graphData) return [] as GraphNode[];
     return graphData.nodes.filter((n) => {
       if (filters.docTypes.size > 0 && !filters.docTypes.has(n.type)) return false;
       return true;
     });
   });
 
-  const visibleEdges = $derived(() => {
-    if (!graphData) return [];
-    const nodeIds = new Set(visibleNodes().map((n) => n.id));
+  const visibleEdges = $derived.by(() => {
+    if (!graphData) return [] as GraphEdge[];
+    const nodeIds = new Set(visibleNodes.map((n) => n.id));
     return graphData.edges.filter((e) => {
       if (!filters.showBroken && e.broken) return false;
       return nodeIds.has(e.source) && nodeIds.has(e.target);
     });
   });
 
-  const nodeCount = $derived(visibleNodes().length);
-  const edgeCount = $derived(visibleEdges().length);
+  const nodeCount = $derived(visibleNodes.length);
+  const edgeCount = $derived(visibleEdges.length);
 
   // ---------------------------------------------------------------------------
   // Cytoscape instance
@@ -183,7 +183,7 @@
   /** Convert flat GraphData to Cytoscape elements array. */
   function buildElements(gd: GraphData) {
     const nodeIds = new Set(gd.nodes.map((n) => n.id));
-    const nodes = visibleNodes().map((n) => ({
+    const nodes = visibleNodes.map((n) => ({
       group: "nodes" as const,
       data: {
         id: n.id,
@@ -198,7 +198,7 @@
       },
     }));
 
-    const edges = visibleEdges()
+    const edges = visibleEdges
       .filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target))
       .map((e, i) => ({
         group: "edges" as const,
@@ -472,10 +472,10 @@
       }
       graphData = (await res.json()) as GraphData;
       loadState = "done";
-    } catch {
-      // If fetch fails, fall back to mock data so the graph still renders
-      graphData = buildMockData();
-      loadState = "done";
+    } catch (err) {
+      // Show error state — do NOT silently fall back to mock data.
+      errorMessage = err instanceof Error ? err.message : "failed to load graph";
+      loadState = "error";
     }
   }
 
