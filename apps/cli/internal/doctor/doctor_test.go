@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vedox/vedox/internal/secrets"
 )
 
 // ---- helper: temp vedox home -------------------------------------------------
@@ -496,6 +498,10 @@ func TestRunAllReturnsAllChecks(t *testing.T) {
 		VedoxHome:   home,
 		DefaultPort: 19998,
 		CLIVersion:  "test",
+		// Inject an in-memory SecretStore so the keychain check does NOT touch
+		// the real macOS Keychain (which would leak probe keys and may prompt
+		// for permission in sandboxed contexts).
+		SecretStore: secrets.NewInMemoryStore(),
 	}
 	results := RunAll(cfg)
 	// RunAll must return at least 9 checks per task spec. We currently implement

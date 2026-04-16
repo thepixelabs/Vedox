@@ -89,6 +89,12 @@ type Config struct {
 	// IndexDBPath overrides the path to index.db. Empty means derive from
 	// VedoxHome.
 	IndexDBPath string
+
+	// SecretStore is an optional pre-constructed SecretStore used by the
+	// keychain check. When nil, the check calls secrets.AutoDetect() and
+	// inspects the concrete type. Tests inject secrets.NewInMemoryStore()
+	// here to avoid touching the real OS keychain.
+	SecretStore secrets.SecretStore
 }
 
 // DefaultConfig returns a Config with all fields populated from the environment.
@@ -132,7 +138,7 @@ func RunAll(cfg Config) []Check {
 		checkPortAvailable(cfg),
 		checkRegistryValid(cfg),
 		checkDiskSpace(cfg),
-		checkKeychainAccessible,
+		func() Check { return checkKeychainAccessible(cfg) },
 		checkLogDirWritable(cfg),
 		checkWALSize(cfg),
 		checkInotifyLimit,
@@ -469,39 +475,90 @@ func checkDiskSpace(cfg Config) checkFn {
 	}
 }
 
-// checkKeychainAccessible performs a write + read + delete cycle using the
-// OS keychain to confirm it is reachable. Uses a dedicated test key so the
-// probe cannot interfere with real secrets.
-func checkKeychainAccessible() Check {
-	// We use the KeyringStore directly. If it succeeds, the OS keychain is up.
-	// If it fails (e.g., no Secret Service daemon on headless Linux), we WARN —
-	// the CLI can still operate via the age-file or env-var tiers.
-	store := secrets.NewKeyringStore()
-
-	const probeKey = "vedox:doctor-probe"
-	probeVal := []byte("vedox-doctor-" + strconv.FormatInt(time.Now().UnixNano(), 16))
-
-	if err := store.Put(probeKey, probeVal); err != nil {
+// checkKeychainAccessible reports whether the OS keychain is available AND
+// usable as a backend for HMAC secrets.
+//
+// Three outcomes:
+//  1. cfg.SecretStore is provided (tests) — assume caller knows what they're
+//     doing; report PASS without probing the real keychain.
+//  2. AutoDetect returns a non-keychain backend (AgeStore / EnvStore /
+//     InMemoryStore) — the keychain is unreachable on this platform or the
+//     operator has opted into a file/env-based tier. WARN, do NOT probe write.
+//  3. AutoDetect returns a KeyringStore — perform a short write/read/delete
+//     probe with a unique PID + nanosecond-timestamped key. If Put is denied
+//     (sandboxed / MDM context) report WARN and do NOT leak any key.
+func checkKeychainAccessible(cfg Config) Check {
+	// Test-injected stub: skip real keychain probing entirely.
+	if cfg.SecretStore != nil {
+		if _, isKeyring := cfg.SecretStore.(*secrets.KeyringStore); isKeyring {
+			return doKeychainProbe(cfg.SecretStore)
+		}
 		return Check{
 			Name:    "keychain accessible",
-			Status:  StatusWarn,
-			Message: fmt.Sprintf("OS keychain write failed: %v — HMAC secrets may fall back to age-encrypted file or env var", err),
-			Fix:     "check macOS Keychain Access / Linux Secret Service daemon (gnome-keyring or kwallet)",
+			Status:  StatusPass,
+			Message: "using injected secret store (test stub) — keychain probe skipped",
 		}
 	}
 
-	got, err := store.Get(probeKey)
+	store, err := secrets.AutoDetect()
 	if err != nil {
 		return Check{
 			Name:    "keychain accessible",
 			Status:  StatusWarn,
-			Message: fmt.Sprintf("OS keychain read-back failed after successful write: %v", err),
+			Message: fmt.Sprintf("no secret storage backend available: %v", err),
+			Fix:     "set VEDOX_AGE_PASSPHRASE_FILE, VEDOX_HMAC_KEY_FILE, or enable the OS keychain",
 		}
 	}
 
-	// Clean up the probe key regardless of value match.
-	_ = store.Delete(probeKey)
+	ks, isKeyring := store.(*secrets.KeyringStore)
+	if !isKeyring {
+		return Check{
+			Name:    "keychain accessible",
+			Status:  StatusWarn,
+			Message: "OS keychain unreachable — falling back to age-encrypted file or env-var secrets",
+			Fix:     "on macOS: unlock the login keychain; on Linux: start gnome-keyring or kwallet; on headless: this is expected",
+		}
+	}
 
+	return doKeychainProbe(ks)
+}
+
+// doKeychainProbe performs a short, cleanup-safe probe against the supplied
+// keyring-backed store. The probe key includes the PID and nanosecond
+// timestamp so any leak is identifiable and not a forever-stable
+// "vedox:doctor-probe" entry.
+func doKeychainProbe(store secrets.SecretStore) Check {
+	probeKey := fmt.Sprintf("vedox:doctor-probe-%d-%d", os.Getpid(), time.Now().UnixNano())
+	probeVal := []byte(strconv.FormatInt(time.Now().UnixNano(), 16))
+
+	if err := store.Put(probeKey, probeVal); err != nil {
+		// Put failed → nothing was written, no cleanup needed.
+		return Check{
+			Name:    "keychain accessible",
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("keychain permission denied in this context: %v — HMAC secrets may fall back to age-encrypted file or env var", err),
+			Fix:     "grant keychain access to the vedox binary (macOS: Keychain Access); headless Linux: use VEDOX_AGE_PASSPHRASE_FILE",
+		}
+	}
+
+	// From here on, always attempt Delete before returning so we never leak.
+	got, readErr := store.Get(probeKey)
+	if delErr := store.Delete(probeKey); delErr != nil && !secrets.IsNotFound(delErr) {
+		return Check{
+			Name:    "keychain accessible",
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("keychain probe key could not be deleted: %v — orphan entry %q may remain", delErr, probeKey),
+			Fix:     "manually remove the probe entry from Keychain Access / Secret Service",
+		}
+	}
+
+	if readErr != nil {
+		return Check{
+			Name:    "keychain accessible",
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("OS keychain read-back failed after successful write: %v", readErr),
+		}
+	}
 	if string(got) != string(probeVal) {
 		return Check{
 			Name:    "keychain accessible",
