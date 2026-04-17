@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/scanner"
@@ -57,7 +58,7 @@ func newSettingsFixture(t *testing.T) *settingsFixture {
 		scanner.NewJobStore(),
 		ai.NewJobStore(3),
 		store.NewProjectRegistry(),
-		nil,
+		agentauth.PassthroughAuth(),
 	)
 	apiSrv.SetHomeDirOverride(homeResolved)
 

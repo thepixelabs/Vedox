@@ -483,6 +483,13 @@ func UninstallSystemd() error {
 
 // writeFileAtomic writes content to path using a temp-file + rename pattern.
 // This ensures launchd/systemd never reads a partially-written file.
+//
+// FIX-SEC-06: the file mode is applied via fchmod on the open descriptor
+// BEFORE Close (tmp.Chmod) rather than path-based os.Chmod(tmpName, ...) after
+// Close. Path-based chmod has a TOCTOU window between Close and Chmod that a
+// local attacker able to create files in dir could exploit to have the chmod
+// apply to their substituted file. fchmod on an open fd cannot be
+// substituted.
 func writeFileAtomic(path string, content []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".vedox-supervisor-*")
@@ -496,13 +503,16 @@ func writeFileAtomic(path string, content []byte, perm os.FileMode) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("cannot write to temp file: %w", err)
 	}
+	// fchmod via the open fd closes the TOCTOU window that a path-based chmod
+	// after Close would leave open.
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("cannot chmod temp file: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		return fmt.Errorf("cannot close temp file: %w", err)
-	}
-	if err := os.Chmod(tmpName, perm); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("cannot chmod temp file: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		os.Remove(tmpName)

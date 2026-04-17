@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/scanner"
@@ -51,7 +52,7 @@ func newAnalyticsFixture(t *testing.T) *analyticsFixture {
 	}
 	t.Cleanup(func() { _ = wsDB.Close() })
 
-	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), nil)
+	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), agentauth.PassthroughAuth())
 	srv.SetGlobalDB(gdb)
 
 	mux := http.NewServeMux()
@@ -166,7 +167,7 @@ func TestAnalyticsSummary_NilGlobalDB(t *testing.T) {
 	wsDB, _ := db.Open(db.Options{WorkspaceRoot: wsRoot})
 	t.Cleanup(func() { _ = wsDB.Close() })
 
-	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), nil)
+	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), agentauth.PassthroughAuth())
 	// No SetGlobalDB call.
 
 	mux := http.NewServeMux()

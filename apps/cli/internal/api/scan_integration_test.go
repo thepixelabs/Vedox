@@ -2,13 +2,11 @@ package api_test
 
 // Integration tests for POST /api/scan and GET /api/scan/:jobId.
 //
-// IMPORTANT — race-detector behaviour:
-// handleGetScanJob json-encodes the *ScanJob without holding the JobStore
-// mutex, which races against the in-flight runScan goroutine. Tests therefore
-// wait for completion via the JobStore's own LastCompleted method (which uses
-// the JobStore's RLock) and only call the HTTP API for the final assertion,
-// once the scan goroutine has fully exited. This is a real, pre-existing
-// production data race — see the handoff notes for follow-up.
+// handleGetScanJob now json-encodes via JobStore.Snapshot, which returns a
+// value copy taken under the store mutex (see WS-Q-17 for the original race
+// write-up). Tests still wait for completion before asserting Projects
+// content (the scan must actually finish to populate the field), but the
+// HTTP path itself is race-free under -race regardless of timing.
 
 import (
 	"net/http"

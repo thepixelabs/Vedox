@@ -213,12 +213,21 @@ func (s *AgeStore) writeLocked() error {
 }
 
 // Close best-effort zeroes the in-memory passphrase so it is not present in a
-// core dump or page-swap after the store is no longer needed. Cached secret
-// values are stored as Go strings, which are immutable and not zeroable —
-// that is an acknowledged limitation of holding secrets in a map[string]string.
-// Callers should prefer a short-lived AgeStore where possible.
+// core dump or page-swap after the store is no longer needed, and removes the
+// bare VEDOX_AGE_PASSPHRASE env var from the process environment so child
+// processes forked after Close do not inherit the raw passphrase via
+// /proc/<pid>/environ (the weakest tier per §2.2 of the design doc).
 //
-// Close is idempotent.
+// Cached secret values are stored as Go strings in s.cache (map[string]string).
+// Go strings are immutable and NOT zeroable — the runtime may copy them,
+// intern them, or place them in a read-only segment. This is an acknowledged
+// limitation of holding secrets in a map[string]string; callers should prefer
+// a short-lived AgeStore where possible.
+//
+// VEDOX_AGE_PASSPHRASE_FILE is deliberately not unset — it holds only a path,
+// not the secret itself.
+//
+// Close is idempotent and safe to call multiple times.
 func (s *AgeStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -227,6 +236,9 @@ func (s *AgeStore) Close() error {
 	}
 	s.passphrase = nil
 	s.loaded = false
+	if _, ok := os.LookupEnv("VEDOX_AGE_PASSPHRASE"); ok {
+		_ = os.Unsetenv("VEDOX_AGE_PASSPHRASE")
+	}
 	return nil
 }
 

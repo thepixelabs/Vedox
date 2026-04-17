@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/api"
 	"github.com/vedox/vedox/internal/db"
@@ -59,7 +60,7 @@ func newBrowseFixture(t *testing.T) *testFixture {
 		scanner.NewJobStore(),
 		ai.NewJobStore(3),
 		store.NewProjectRegistry(),
-		nil,
+		agentauth.PassthroughAuth(),
 	)
 	srv.SetBootstrapToken(testBrowseToken)
 

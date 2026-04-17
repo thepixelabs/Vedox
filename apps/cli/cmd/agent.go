@@ -609,6 +609,74 @@ func runGeminiRepair(cmd *cobra.Command) error {
 	return nil
 }
 
+// --- agent login ----------------------------------------------------------
+
+var agentLoginFlags struct {
+	provider string
+}
+
+var agentLoginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Mint a short-lived JWT for a bearer-token-only provider",
+	Long: `Mint a short-lived (15 minute) JWT bound to the installed agent key.
+
+Used for providers that cannot perform per-request HMAC signing — currently
+only Copilot. The token is printed to stdout so you can pipe it to a
+clipboard helper:
+
+    vedox agent login --provider copilot | pbcopy
+
+Other providers (claude, codex, gemini) sign each request with HMAC and do
+not need a separate login step; running login for them returns an error.`,
+	RunE: runAgentLogin,
+}
+
+func runAgentLogin(cmd *cobra.Command, _ []string) error {
+	p := agentLoginFlags.provider
+	if p == "" {
+		return fmt.Errorf("--provider is required (currently only 'copilot' is supported)")
+	}
+	if providers.ProviderID(p) != providers.ProviderCopilot {
+		return fmt.Errorf("provider %q does not support 'agent login'; only 'copilot' uses bearer-token auth", p)
+	}
+
+	cfg, err := config.LoadConfig(globalFlags.configPath)
+	if err != nil {
+		return err
+	}
+	ks, err := agentauth.LoadKeyStore(cfg.Workspace)
+	if err != nil {
+		return err
+	}
+	store, err := providers.NewReceiptStore("")
+	if err != nil {
+		return err
+	}
+	daemonURL := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
+	installer, err := providers.NewCopilotInstaller("", "", daemonURL, ks, store)
+	if err != nil {
+		return err
+	}
+
+	// Test for the optional Login capability. The compile-time assertion in
+	// copilot_login.go guarantees Copilot satisfies it; this assertion exists
+	// so the cmd layer fails cleanly if a future provider is rerouted here
+	// without implementing the interface.
+	auth, ok := installer.(providers.AgentAuthenticator)
+	if !ok {
+		return fmt.Errorf("internal: installer for %q does not implement AgentAuthenticator", p)
+	}
+
+	token, err := auth.Login(cmd.Context(), ks)
+	if err != nil {
+		return err
+	}
+	// Print only the token on stdout — no surrounding text — so the output
+	// is pipe-safe (e.g. `vedox agent login --provider copilot | pbcopy`).
+	fmt.Println(token)
+	return nil
+}
+
 // --- agent list -----------------------------------------------------------
 
 var agentListCmd = &cobra.Command{
@@ -682,11 +750,25 @@ func init() {
 		panic(fmt.Sprintf("agent repair: RegisterFlagCompletionFunc: %v", err))
 	}
 
+	// agent login flags — only copilot is valid today; gate completion to that
+	// single provider so users do not get tab-completed into a guaranteed-error
+	// path for claude/codex/gemini.
+	agentLoginCmd.Flags().StringVar(&agentLoginFlags.provider, "provider", "",
+		"AI provider to mint a JWT for (currently only: copilot)")
+	if err := agentLoginCmd.RegisterFlagCompletionFunc("provider",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return []string{"copilot"}, cobra.ShellCompDirectiveNoFileComp
+		},
+	); err != nil {
+		panic(fmt.Sprintf("agent login: RegisterFlagCompletionFunc: %v", err))
+	}
+
 	// wire subcommands
 	agentCmd.AddCommand(agentInstallCmd)
 	agentCmd.AddCommand(agentUninstallCmd)
 	agentCmd.AddCommand(agentRepairCmd)
 	agentCmd.AddCommand(agentListCmd)
+	agentCmd.AddCommand(agentLoginCmd)
 
 	rootCmd.AddCommand(agentCmd)
 }

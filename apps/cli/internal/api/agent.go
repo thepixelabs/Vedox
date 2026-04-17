@@ -164,6 +164,14 @@ func (s *Server) handleAgentInstall(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Emit agent.installed only after the install actually landed on disk.
+	// We use the DB-normalised provider name (e.g. "claude-code" rather than
+	// "claude") so the dashboard aggregator doesn't have to rewrite values.
+	s.emitEvent("agent.installed", map[string]any{
+		"provider": agentProviderToDB(receipt.Provider),
+		"version":  receipt.Version,
+	})
+
 	writeJSON(w, http.StatusCreated, agentReceiptResponse{
 		Provider:    string(receipt.Provider),
 		Version:     receipt.Version,
@@ -265,7 +273,15 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 // buildInstaller constructs the appropriate ProviderInstaller and a
 // ReceiptStore for the given provider string. Returns an error for unknown
 // providers. The ReceiptStore is returned so callers can Save after Install.
+//
+// When s.installerFactoryOverride is non-nil (tests only) it is consulted
+// first and returned verbatim, bypassing the real provider constructors.
+// agent_test.go uses this seam to inject a stub installer that can force
+// Install/Uninstall errors deterministically.
 func (s *Server) buildInstaller(provider string) (providers.ProviderInstaller, *providers.ReceiptStore, error) {
+	if s.installerFactoryOverride != nil {
+		return s.installerFactoryOverride(provider)
+	}
 	home, err := s.userHome()
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not determine home directory: %w", err)

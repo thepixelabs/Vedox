@@ -1,13 +1,16 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
+	"github.com/vedox/vedox/internal/analytics"
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/docgraph"
 	"github.com/vedox/vedox/internal/providers"
@@ -15,6 +18,14 @@ import (
 	"github.com/vedox/vedox/internal/store"
 	"github.com/vedox/vedox/internal/voice"
 )
+
+// eventEmitter is the narrow slice of *analytics.Collector that the API
+// handlers depend on. Defined as an interface so tests can supply a fake
+// that records every Emit call without needing a real SQLite-backed
+// Collector. Production code injects *analytics.Collector directly.
+type eventEmitter interface {
+	Emit(e analytics.Event) error
+}
 
 // Server holds the shared dependencies for all API handlers. It is constructed
 // once in cmd/dev.go and its routes are mounted onto the main http.ServeMux.
@@ -77,12 +88,37 @@ type Server struct {
 	// documents have been indexed yet. handleGraph returns 503 when nil.
 	// Inject with SetGraphStore after NewServer.
 	graphStore *docgraph.GraphStore
+
+	// collector is the analytics write-side. When non-nil, handlers that
+	// represent analytically-interesting user actions (document.published,
+	// repo.registered, agent.installed, onboarding.completed) fire-and-forget
+	// an Emit call after the action succeeds. It is nil in dev-server mode
+	// and in unit tests that do not care about event emission — every Emit
+	// call is nil-guarded. Inject with SetCollector after NewServer.
+	collector eventEmitter
+
+	// installerFactoryOverride, if non-nil, replaces buildInstaller. Tests-only
+	// seam: production code never sets it. Allows agent_test.go to inject a
+	// stub ProviderInstaller (with deterministic Probe/Plan/Install/Uninstall
+	// outcomes) without spinning up a real provider that touches ~/.claude/
+	// or runs `claude --version`. The returned ReceiptStore is used by the
+	// install handler to persist the resulting receipt — tests can supply a
+	// real ReceiptStore rooted at t.TempDir() to verify on-disk side effects.
+	installerFactoryOverride func(provider string) (providers.ProviderInstaller, *providers.ReceiptStore, error)
 }
 
 // SetHomeDirOverride replaces the home directory used for user-global provider
 // config paths. Tests only — production code must not call this.
 func (s *Server) SetHomeDirOverride(home string) {
 	s.homeDirOverride = home
+}
+
+// SetInstallerFactoryOverride installs a tests-only seam that replaces
+// buildInstaller. Production code must not call this. It exists so agent
+// handler tests can inject a deterministic stub ProviderInstaller in place
+// of the real adapters (which touch ~/.claude/, run `claude --version`, etc).
+func (s *Server) SetInstallerFactoryOverride(fn func(provider string) (providers.ProviderInstaller, *providers.ReceiptStore, error)) {
+	s.installerFactoryOverride = fn
 }
 
 // SetGlobalDB injects the GlobalDB handle into the server. Call this after
@@ -128,6 +164,42 @@ func (s *Server) SetGraphStore(gs *docgraph.GraphStore) {
 	s.graphStore = gs
 }
 
+// SetCollector injects the analytics Collector used by handlers to emit
+// audit-able user actions (document published, repo registered, agent
+// installed, onboarding completed). Call this after NewServer when the
+// daemon has successfully constructed and Start()-ed a Collector. Passing
+// nil disables event emission, which is the dev-server default — all
+// emitEvent call sites are nil-guarded.
+func (s *Server) SetCollector(c eventEmitter) {
+	s.collector = c
+}
+
+// emitEvent is the single fan-out helper that every handler uses to fire an
+// analytics event. It centralises three invariants:
+//
+//  1. nil-guard — a nil collector is always valid (dev-server, unit tests).
+//  2. fire-and-forget — Emit errors are logged at debug level but never
+//     surface to the caller. Analytics must never break the HTTP response.
+//  3. timestamp — callers never have to set it; we stamp time.Now() here so
+//     every event carries a consistent UTC wall-clock from the handler.
+//
+// Properties may be nil when the event has no attributes.
+func (s *Server) emitEvent(kind string, props map[string]any) {
+	if s.collector == nil {
+		return
+	}
+	err := s.collector.Emit(analytics.Event{
+		Kind:       kind,
+		Timestamp:  time.Now(),
+		Properties: props,
+	})
+	if err != nil {
+		// Most likely Validate() rejected the event. A bad kind constant
+		// would be a programmer error, not user-facing — log and move on.
+		slog.Debug("api: analytics emit dropped", "kind", kind, "error", err.Error())
+	}
+}
+
 // userHome returns homeDirOverride when set, otherwise os.UserHomeDir().
 func (s *Server) userHome() (string, error) {
 	if s.homeDirOverride != "" {
@@ -144,9 +216,15 @@ func (s *Server) userHome() (string, error) {
 // registry must be non-nil; use store.NewProjectRegistry() if no registry exists.
 func NewServer(docStore store.DocStore, dbStore *db.Store, workspaceRoot string, jobStore *scanner.JobStore, aiJobStore *ai.JobStore, registry *store.ProjectRegistry, requireAgent agentauth.Middleware) *Server {
 	if requireAgent == nil {
-		// Fail-closed default: tests and callers that do not supply auth get
-		// a passthrough so wiring does not explode, but this is explicit.
-		requireAgent = agentauth.PassthroughAuth()
+		// FIX-SEC-10: fail-closed construction. Silently substituting
+		// PassthroughAuth here produced an unauthenticated agent surface
+		// whenever a caller forgot to wire auth — exactly the class of
+		// mistake that made the daemon serve /docs without auth on a
+		// keystore-load failure. Panic instead so the miswiring is caught
+		// immediately at process start, not after a production incident.
+		// Callers that genuinely want no auth (integration tests) must
+		// explicitly pass agentauth.PassthroughAuth().
+		panic("api.NewServer: requireAgent must not be nil; pass agentauth.RequireAgent(ks), agentauth.RejectAllAuth(), or (tests only) agentauth.PassthroughAuth()")
 	}
 	return &Server{
 		store:         docStore,
@@ -188,6 +266,10 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	r.Get("/api/projects", s.handleListProjects)
 
 	// Workspace scan — async job-based scanning with progress polling.
+	// GET returns a synchronous summary of the last completed scan (running
+	// one if none is cached) in the lightweight shape the editor onboarding
+	// step expects; see handleGetScanSummary for rationale.
+	r.Get("/api/scan", s.handleGetScanSummary)
 	r.Post("/api/scan", s.handleStartScan)
 	r.Get("/api/scan/{jobId}", s.handleGetScanJob)
 
@@ -265,8 +347,15 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	r.Post("/api/repos", s.handleCreateRepo)
 	// Onboarding-specific repo endpoints. These must be registered before the
 	// generic POST /api/repos so chi matches the more-specific routes first.
-	r.Post("/api/repos/create", s.handleCreateRepoWithInit)
-	r.Post("/api/repos/register", s.handleRegisterRepo)
+	//
+	// FIX-SEC-07: both mutating endpoints scaffold directories and register
+	// repos in GlobalDB — operations that write to disk under $HOME and touch
+	// global daemon state. Any local process (or drive-by page that tricks the
+	// browser into a same-origin POST) could previously create/register repos
+	// without credentials. Require the bootstrap token so only callers with
+	// file-read access to ~/.vedox/daemon-token (0600) can drive onboarding.
+	r.With(s.requireBootstrapToken).Post("/api/repos/create", s.handleCreateRepoWithInit)
+	r.With(s.requireBootstrapToken).Post("/api/repos/register", s.handleRegisterRepo)
 
 	// Doc Agent management — install/uninstall/list across all supported providers.
 	// Requires a KeyStore (SetKeyStore); returns 503 in dev-server mode.
@@ -291,6 +380,11 @@ func (s *Server) Mount(mux *http.ServeMux) {
 
 	// Analytics summary — cross-workspace event aggregates from GlobalDB.
 	r.Get("/api/analytics/summary", s.handleAnalyticsSummary)
+
+	// Onboarding completion — a narrow write-only endpoint the SvelteKit
+	// AllDone step posts to so the analytics Collector can emit
+	// onboarding.completed. Returns 204 No Content; the body is optional.
+	r.Post("/api/onboarding/complete", s.handleOnboardingComplete)
 
 	// AI provider config — manage Claude Code config, Codex global config.
 	r.Route("/api/projects/{project}/providers", func(pr chi.Router) {

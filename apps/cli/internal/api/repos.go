@@ -151,6 +151,17 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Emit repo.registered. The generic POST /api/repos endpoint is used by
+	// the CLI wrapper and the editor when no scaffolding is needed; we treat
+	// any successful insert into the global registry as "registered" for
+	// analytics purposes. The repo_id lets aggregators correlate events
+	// across multiple user actions on the same repo without storing paths.
+	s.emitEvent("repo.registered", map[string]any{
+		"repo_id": created.ID,
+		"type":    created.Type,
+		"source":  "add",
+	})
+
 	writeJSON(w, http.StatusCreated, repoToResponse(created))
 }
 
@@ -294,6 +305,18 @@ func (s *Server) handleCreateRepoWithInit(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "VDX-500", "repo created but could not be retrieved")
 		return
 	}
+
+	// Emit repo.registered on the init+register path too. We deliberately
+	// use the same kind as /api/repos even though /create scaffolded the
+	// directory; the first-10 bootstrap taxonomy lists a separate
+	// repo.created kind, but the onboarding flow treats both paths as
+	// "a new repo exists in the registry." The source property lets later
+	// analytics tell the two paths apart when it matters.
+	s.emitEvent("repo.registered", map[string]any{
+		"repo_id": created.ID,
+		"type":    created.Type,
+		"source":  "create",
+	})
 
 	writeJSON(w, http.StatusCreated, repoToResponse(created))
 }
@@ -439,6 +462,12 @@ func (s *Server) handleRegisterRepo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "VDX-500", "repo registered but could not be retrieved")
 		return
 	}
+
+	s.emitEvent("repo.registered", map[string]any{
+		"repo_id": created.ID,
+		"type":    created.Type,
+		"source":  "register",
+	})
 
 	writeJSON(w, http.StatusCreated, repoToResponse(created))
 }

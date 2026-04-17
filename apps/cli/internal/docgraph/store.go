@@ -2,9 +2,10 @@
 // doc reference graph. All writes go through the single-writer goroutine
 // inherited from db.Store; reads use the shared read-only connection pool.
 //
-// Schema is created by migration 005_doc_graph.sql. This file does not run
-// migrations itself — callers must open a db.Store (which runs all pending
-// migrations) before constructing a GraphStore.
+// Schema is created by migration 005_doc_graph.sql (edges) and
+// 007_doc_reference_counts.sql (denormalised aggregate). This file does not
+// run migrations itself — callers must open a db.Store (which runs all
+// pending migrations) before constructing a GraphStore.
 package docgraph
 
 import (
@@ -49,8 +50,12 @@ func NewGraphStore(s Submitter) *GraphStore {
 }
 
 // SaveRefs atomically replaces all outgoing references for docID with refs.
-// The operation is a single transaction: delete old edges, insert new ones,
-// then attempt to heal any previously-broken inbound edges that now resolve.
+// The operation is a single transaction: snapshot old targets, delete old
+// edges, insert new ones, then refresh the doc_reference_counts row for the
+// source AND for every target whose inbound count may have changed (the union
+// of old and new targets). Doing the count maintenance inside the same tx
+// guarantees the aggregate never drifts from the underlying edge set even if
+// multiple SaveRefs calls interleave on the writer goroutine.
 //
 // docID must be the workspace-relative slash path of the source document
 // (identical to db.Doc.ID). refs is the full set of outgoing edges for the
@@ -62,6 +67,15 @@ func (g *GraphStore) SaveRefs(ctx context.Context, docID string, refs []DocRef) 
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	return g.submitFn(ctx, func(tx *sql.Tx) error {
+		// Snapshot the targets that the source previously pointed at — we
+		// need them so we can recompute the backlink_count for each one
+		// after the rewrite. vedox-scheme rows are excluded to mirror the
+		// counts table's exclusion of source-code targets.
+		oldTargets, err := selectAffectedTargets(tx, docID)
+		if err != nil {
+			return fmt.Errorf("read old targets for %q: %w", docID, err)
+		}
+
 		// Delete all existing outgoing edges for this source.
 		if _, err := tx.Exec(
 			`DELETE FROM doc_references WHERE source_doc_id = ?`, docID,
@@ -90,6 +104,33 @@ func (g *GraphStore) SaveRefs(ctx context.Context, docID string, refs []DocRef) 
 				now,
 			); err != nil {
 				return fmt.Errorf("insert ref %q -> %q: %w", docID, r.TargetPath, err)
+			}
+		}
+
+		// Build the union of old + new targets that need backlink_count
+		// refreshed. Using a set deduplicates the case where the same
+		// target appears in both sides of the rewrite.
+		affected := make(map[string]struct{}, len(oldTargets)+len(refs))
+		for _, t := range oldTargets {
+			affected[t] = struct{}{}
+		}
+		for _, r := range refs {
+			if r.LinkType == LinkTypeVedoxScheme {
+				continue
+			}
+			if r.TargetPath == "" {
+				continue
+			}
+			affected[r.TargetPath] = struct{}{}
+		}
+
+		nowUnix := time.Now().UTC().Unix()
+		if err := refreshOutgoingCount(tx, docID, nowUnix); err != nil {
+			return fmt.Errorf("refresh ref_count for %q: %w", docID, err)
+		}
+		for target := range affected {
+			if err := refreshInboundCount(tx, target, nowUnix); err != nil {
+				return fmt.Errorf("refresh backlink_count for %q: %w", target, err)
 			}
 		}
 		return nil
@@ -157,14 +198,31 @@ func (g *GraphStore) GetBrokenLinks(ctx context.Context) ([]DocRef, error) {
 }
 
 // DeleteRefs removes all outgoing references for docID. Call this when a
-// document is deleted from the index.
+// document is deleted from the index. The doc_reference_counts row for the
+// source is zeroed (not deleted — it may still be a target of other docs)
+// and every former target's backlink_count is recomputed in the same tx.
 func (g *GraphStore) DeleteRefs(ctx context.Context, docID string) error {
 	if docID == "" {
 		return fmt.Errorf("docgraph: DeleteRefs: empty docID")
 	}
 	return g.submitFn(ctx, func(tx *sql.Tx) error {
-		_, err := tx.Exec(`DELETE FROM doc_references WHERE source_doc_id = ?`, docID)
-		return err
+		oldTargets, err := selectAffectedTargets(tx, docID)
+		if err != nil {
+			return fmt.Errorf("read old targets for %q: %w", docID, err)
+		}
+		if _, err := tx.Exec(`DELETE FROM doc_references WHERE source_doc_id = ?`, docID); err != nil {
+			return err
+		}
+		nowUnix := time.Now().UTC().Unix()
+		if err := refreshOutgoingCount(tx, docID, nowUnix); err != nil {
+			return fmt.Errorf("refresh ref_count for %q: %w", docID, err)
+		}
+		for _, target := range oldTargets {
+			if err := refreshInboundCount(tx, target, nowUnix); err != nil {
+				return fmt.Errorf("refresh backlink_count for %q: %w", target, err)
+			}
+		}
+		return nil
 	})
 }
 
@@ -196,6 +254,160 @@ func (g *GraphStore) GetAllRefsForPrefix(ctx context.Context, prefix string) ([]
 	}
 	defer rows.Close()
 	return scanRefs(rows)
+}
+
+// ReferenceCounts is the aggregate edge-count view of a single document.
+type ReferenceCounts struct {
+	// DocID is the workspace-relative slash path.
+	DocID string
+	// RefCount is the number of outgoing edges from this doc.
+	RefCount int
+	// BacklinkCount is the number of inbound edges (vedox-scheme excluded).
+	BacklinkCount int
+	// UpdatedAt is the unix timestamp of the last count refresh.
+	UpdatedAt int64
+}
+
+// GetReferenceCounts returns the cached ref_count and backlink_count for
+// docID. If no counts row exists for docID (the doc has never been a source
+// or a non-vedox target) the zero ReferenceCounts is returned with no error.
+func (g *GraphStore) GetReferenceCounts(ctx context.Context, docID string) (ReferenceCounts, error) {
+	if docID == "" {
+		return ReferenceCounts{}, fmt.Errorf("docgraph: GetReferenceCounts: empty docID")
+	}
+	var rc ReferenceCounts
+	err := g.readDB.QueryRowContext(ctx,
+		`SELECT doc_id, ref_count, backlink_count, updated_at
+		   FROM doc_reference_counts
+		  WHERE doc_id = ?`,
+		docID,
+	).Scan(&rc.DocID, &rc.RefCount, &rc.BacklinkCount, &rc.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return ReferenceCounts{DocID: docID}, nil
+	}
+	if err != nil {
+		return ReferenceCounts{}, fmt.Errorf("docgraph: GetReferenceCounts %q: %w", docID, err)
+	}
+	return rc, nil
+}
+
+// TopReferencedDocs returns the top `limit` docs by backlink_count, descending,
+// with ties broken by doc_id for determinism. Docs with zero backlinks are
+// excluded — there is no use case where we want to surface unreferenced docs
+// in a "most referenced" list, and excluding them keeps the result set tight
+// on workspaces with many leaf docs.
+//
+// limit must be > 0; a non-positive limit returns an error rather than the
+// confusing default behaviour of SQLite's LIMIT (which silently treats <=0
+// as "no limit").
+func (g *GraphStore) TopReferencedDocs(ctx context.Context, limit int) ([]ReferenceCounts, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("docgraph: TopReferencedDocs: limit must be > 0, got %d", limit)
+	}
+	rows, err := g.readDB.QueryContext(ctx,
+		`SELECT doc_id, ref_count, backlink_count, updated_at
+		   FROM doc_reference_counts
+		  WHERE backlink_count > 0
+		  ORDER BY backlink_count DESC, doc_id ASC
+		  LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("docgraph: TopReferencedDocs: %w", err)
+	}
+	defer rows.Close()
+	var out []ReferenceCounts
+	for rows.Next() {
+		var rc ReferenceCounts
+		if err := rows.Scan(&rc.DocID, &rc.RefCount, &rc.BacklinkCount, &rc.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("docgraph: scan TopReferencedDocs row: %w", err)
+		}
+		out = append(out, rc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("docgraph: iterate TopReferencedDocs: %w", err)
+	}
+	return out, nil
+}
+
+// selectAffectedTargets returns the distinct non-vedox-scheme targets that
+// docID currently points to. It is called BEFORE rewriting doc_references in
+// SaveRefs/DeleteRefs so we know which targets need their backlink_count
+// refreshed afterwards. vedox-scheme targets are excluded because they refer
+// to source-code files, not docs, and intentionally do not get a counts row.
+func selectAffectedTargets(tx *sql.Tx, docID string) ([]string, error) {
+	rows, err := tx.Query(
+		`SELECT DISTINCT target_path
+		   FROM doc_references
+		  WHERE source_doc_id = ?
+		    AND link_type != ?`,
+		docID, string(LinkTypeVedoxScheme),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		if t == "" {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// refreshOutgoingCount sets doc_reference_counts.ref_count for docID to the
+// current COUNT(*) of outgoing edges from doc_references and bumps updated_at.
+// The row is created if it does not yet exist (UPSERT semantics).
+func refreshOutgoingCount(tx *sql.Tx, docID string, now int64) error {
+	var n int
+	if err := tx.QueryRow(
+		`SELECT COUNT(*) FROM doc_references WHERE source_doc_id = ?`,
+		docID,
+	).Scan(&n); err != nil {
+		return err
+	}
+	_, err := tx.Exec(
+		`INSERT INTO doc_reference_counts (doc_id, ref_count, backlink_count, updated_at)
+		 VALUES (?, ?, 0, ?)
+		 ON CONFLICT(doc_id) DO UPDATE
+		   SET ref_count = excluded.ref_count,
+		       updated_at = excluded.updated_at`,
+		docID, n, now,
+	)
+	return err
+}
+
+// refreshInboundCount sets doc_reference_counts.backlink_count for target to
+// the current COUNT(*) of non-vedox-scheme inbound edges and bumps updated_at.
+// The row is created if it does not yet exist.
+func refreshInboundCount(tx *sql.Tx, target string, now int64) error {
+	if target == "" {
+		return nil
+	}
+	var n int
+	if err := tx.QueryRow(
+		`SELECT COUNT(*) FROM doc_references
+		  WHERE target_path = ?
+		    AND link_type != ?`,
+		target, string(LinkTypeVedoxScheme),
+	).Scan(&n); err != nil {
+		return err
+	}
+	_, err := tx.Exec(
+		`INSERT INTO doc_reference_counts (doc_id, ref_count, backlink_count, updated_at)
+		 VALUES (?, 0, ?, ?)
+		 ON CONFLICT(doc_id) DO UPDATE
+		   SET backlink_count = excluded.backlink_count,
+		       updated_at = excluded.updated_at`,
+		target, n, now,
+	)
+	return err
 }
 
 // escapeLikePrefix escapes the LIKE metacharacters '%' and '_' (plus the

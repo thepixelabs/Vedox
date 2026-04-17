@@ -30,6 +30,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/api"
 	"github.com/vedox/vedox/internal/db"
@@ -289,7 +290,7 @@ func TestHistoryIntegration_APIEndpoint(t *testing.T) {
 	srv := api.NewServer(
 		adapter, dbStore, resolved,
 		scanner.NewJobStore(), ai.NewJobStore(3),
-		store.NewProjectRegistry(), nil,
+		store.NewProjectRegistry(), agentauth.PassthroughAuth(),
 	)
 	mux := http.NewServeMux()
 	srv.Mount(mux)

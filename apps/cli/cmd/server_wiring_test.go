@@ -211,3 +211,102 @@ func TestBuildDaemonAPIServer_DegradesWithoutOptionalDeps(t *testing.T) {
 		t.Errorf("/api/analytics/summary: status = %d, want 503 without GlobalDB", resp.StatusCode)
 	}
 }
+
+// TestBuildDaemonAPIServer_RejectAllAuth_Returns503 pins the FIX-SEC-10
+// fail-closed contract: when the daemon constructs an API server with
+// RejectAllAuth as the agent middleware (the branch runForeground hits on
+// keystore load failure), every agent-protected route returns 503.
+//
+// We can't reach the real VDX-P3-INGEST routes yet (they land later), so we
+// prove the middleware behaviour by invoking it directly on the injected
+// server. This is a lightweight substitute for a full ingestion-route test
+// and guards the wiring: if someone replaces RejectAllAuth with Passthrough
+// "to make tests pass", this test fails loudly.
+func TestBuildDaemonAPIServer_RejectAllAuth_Returns503(t *testing.T) {
+	deps, cleanup := newDaemonDepsForTest(t)
+	defer cleanup()
+
+	// Swap the agent middleware for the fail-closed RejectAllAuth — matching
+	// what runForeground does when agentauth.LoadKeyStore returns an error.
+	deps.RequireAgent = agentauth.RejectAllAuth()
+
+	apiServer := buildDaemonAPIServer(deps)
+	if apiServer == nil {
+		t.Fatal("expected non-nil api.Server")
+	}
+
+	// Drive the middleware directly: wrap a sentinel handler and invoke.
+	innerCalled := false
+	handler := deps.RequireAgent(func(w http.ResponseWriter, r *http.Request) {
+		innerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	rec := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/docs/whatever", nil)
+	handler(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("RejectAllAuth: status = %d, want 503", rec.Code)
+	}
+	if innerCalled {
+		t.Error("RejectAllAuth: inner handler was invoked — fail-closed contract violated")
+	}
+}
+
+// TestBuildDaemonAPIServer_ReposCreate_Requires401 pins the FIX-SEC-07
+// guard: POST /api/repos/create rejects a tokenless request with 401. The
+// previous wiring accepted these silently, letting any local process
+// scaffold and register repos without credentials.
+func TestBuildDaemonAPIServer_ReposCreate_Requires401(t *testing.T) {
+	deps, cleanup := newDaemonDepsForTest(t)
+	defer cleanup()
+
+	apiServer := buildDaemonAPIServer(deps)
+	mux := http.NewServeMux()
+	apiServer.Mount(mux)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// No Authorization header → 401.
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/repos/create", nil)
+	req.Header.Set("Origin", "http://localhost:5151")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("POST /api/repos/create (no token): status = %d, want 401 — "+
+			"FIX-SEC-07 guard regressed", resp.StatusCode)
+	}
+}
+
+// TestBuildDaemonAPIServer_ReposRegister_Requires401 is the sibling of the
+// /create test for /api/repos/register.
+func TestBuildDaemonAPIServer_ReposRegister_Requires401(t *testing.T) {
+	deps, cleanup := newDaemonDepsForTest(t)
+	defer cleanup()
+
+	apiServer := buildDaemonAPIServer(deps)
+	mux := http.NewServeMux()
+	apiServer.Mount(mux)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/repos/register", nil)
+	req.Header.Set("Origin", "http://localhost:5151")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("POST /api/repos/register (no token): status = %d, want 401 — "+
+			"FIX-SEC-07 guard regressed", resp.StatusCode)
+	}
+}

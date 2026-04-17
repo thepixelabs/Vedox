@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -62,22 +63,45 @@ func (s *Server) handleDocHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The file path for git is workspace-relative so git -C workspaceRoot works.
-	filePath := relPath
-
-	// Determine the repo root. We try the project directory first (useful for
-	// symlinked external repos), then fall back to the workspace root.
-	repoRoot := filepath.Join(s.workspaceRoot, project)
+	// Determine which filesystem layout the caller is running with, then pick
+	// the (repoRoot, filePath) pair that targets the right git repo and the
+	// right tree path inside it:
+	//
+	//   Layout A — "project is its own git repo" (e.g. symlinked external repos):
+	//       workspaceRoot/project/.git exists. The file is committed at the
+	//       repo-relative tree path equal to docPath, NOT the project-prefixed
+	//       workspace-relative relPath. Use repoRoot=workspaceRoot/project and
+	//       filePath=docPath.
+	//
+	//   Layout B — "workspace is the git repo, project is a subdirectory":
+	//       workspaceRoot/.git exists (or is discoverable). The file is
+	//       committed at tree path project/docPath == relPath. Use
+	//       repoRoot=workspaceRoot and filePath=relPath.
+	//
+	// A previous revision always passed relPath to both attempts and relied on
+	// a fallback cascade, which silently returned empty history in Layout B
+	// because the Layout-A attempt walked up to the workspace repo and then
+	// failed to match the doubly-prefixed pathspec. Probing for the inner
+	// .git directory first makes the choice deterministic and removes the
+	// cascade entirely.
+	var (
+		repoRoot string
+		filePath string
+	)
+	projectDir := filepath.Join(s.workspaceRoot, project)
+	if isGitRepo(projectDir) {
+		repoRoot = projectDir
+		filePath = docPath
+	} else {
+		repoRoot = s.workspaceRoot
+		filePath = relPath
+	}
 
 	entries, err := history.FileHistoryContext(r.Context(), repoRoot, filePath, limit)
 	if err != nil {
-		// Try workspace root as fallback repo root.
-		entries, err = history.FileHistoryContext(r.Context(), s.workspaceRoot, filePath, limit)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "VDX-000",
-				"failed to read git history: "+sanitiseError(err))
-			return
-		}
+		writeError(w, http.StatusInternalServerError, "VDX-000",
+			"failed to read git history: "+sanitiseError(err))
+		return
 	}
 
 	// Ensure non-nil slice so JSON renders [] not null.
@@ -89,6 +113,18 @@ func (s *Server) handleDocHistory(w http.ResponseWriter, r *http.Request) {
 		DocPath: relPath,
 		Entries: entries,
 	})
+}
+
+// isGitRepo reports whether dir is the working tree of a git repository.
+// It checks for a .git entry (directory, file, or symlink) inside dir — which
+// covers normal clones, git-worktree checkouts (where .git is a file), and
+// symlinked-repo setups. It does not shell out to git.
+func isGitRepo(dir string) bool {
+	info, err := os.Lstat(filepath.Join(dir, ".git"))
+	if err != nil {
+		return false
+	}
+	return info != nil
 }
 
 // sanitiseError returns the error message without any user-controlled content

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/scanner"
@@ -184,6 +185,11 @@ func TestCreateRepoWithInit_InvalidJSON(t *testing.T) {
 		strings.NewReader("{not json}"))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:5151")
+	// FIX-SEC-07: /api/repos/create now requires the bootstrap token. Supply
+	// the fixture's token so the handler reaches the JSON-decode path and
+	// returns 400 for malformed input, rather than being blocked at the
+	// auth gate (401).
+	req.Header.Set("Authorization", "Bearer "+testReposToken)
 	resp, err := f.server.Client().Do(req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -201,7 +207,11 @@ func TestCreateRepoWithInit_NoGlobalDB(t *testing.T) {
 	wsDB, _ := db.Open(db.Options{WorkspaceRoot: wsRoot})
 	t.Cleanup(func() { _ = wsDB.Close() })
 
-	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), nil)
+	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), agentauth.PassthroughAuth())
+	// FIX-SEC-07: /api/repos/create requires the bootstrap token. Wire it here
+	// so the test exercises the GlobalDB-missing branch rather than the 401
+	// branch that fires first when the token is absent.
+	srv.SetBootstrapToken(testReposToken)
 
 	mux := http.NewServeMux()
 	srv.Mount(mux)
@@ -212,6 +222,7 @@ func TestCreateRepoWithInit_NoGlobalDB(t *testing.T) {
 		strings.NewReader(`{"name":"x","path":"/tmp/x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:5151")
+	req.Header.Set("Authorization", "Bearer "+testReposToken)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -377,7 +388,10 @@ func TestRegisterRepo_NoGlobalDB(t *testing.T) {
 	wsDB, _ := db.Open(db.Options{WorkspaceRoot: wsRoot})
 	t.Cleanup(func() { _ = wsDB.Close() })
 
-	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), nil)
+	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), agentauth.PassthroughAuth())
+	// FIX-SEC-07: /api/repos/register requires the bootstrap token (see
+	// TestCreateRepoWithInit_NoGlobalDB for rationale).
+	srv.SetBootstrapToken(testReposToken)
 
 	mux := http.NewServeMux()
 	srv.Mount(mux)
@@ -388,6 +402,7 @@ func TestRegisterRepo_NoGlobalDB(t *testing.T) {
 		strings.NewReader(`{"path":"/tmp"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:5151")
+	req.Header.Set("Authorization", "Bearer "+testReposToken)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)

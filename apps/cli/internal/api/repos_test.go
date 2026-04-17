@@ -17,11 +17,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/scanner"
 	"github.com/vedox/vedox/internal/store"
 )
+
+// testReposToken is the bootstrap token the fixture installs on the server.
+// All fixture-driven POSTs carry this value in Authorization: Bearer so the
+// FIX-SEC-07 guard on /api/repos/create and /api/repos/register is satisfied.
+// Tests that exercise the 401 path build their own request without going
+// through the fixture helper.
+const testReposToken = "b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2"
 
 // reposFixture builds an httptest.Server with a real GlobalDB injected.
 type reposFixture struct {
@@ -51,8 +59,9 @@ func newReposFixture(t *testing.T) *reposFixture {
 	}
 	t.Cleanup(func() { _ = wsDB.Close() })
 
-	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), nil)
+	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), agentauth.PassthroughAuth())
 	srv.SetGlobalDB(gdb)
+	srv.SetBootstrapToken(testReposToken)
 
 	mux := http.NewServeMux()
 	srv.Mount(mux)
@@ -75,6 +84,9 @@ func (f *reposFixture) get(t *testing.T, path string) *http.Response {
 }
 
 // post issues a POST with JSON body and the CORS-accepted Origin header.
+// The bootstrap token is attached unconditionally so that tests hitting the
+// FIX-SEC-07-protected endpoints (/api/repos/create, /api/repos/register)
+// succeed. Endpoints that do not require the token simply ignore the header.
 func (f *reposFixture) post(t *testing.T, path string, body interface{}) *http.Response {
 	t.Helper()
 	b, err := json.Marshal(body)
@@ -87,6 +99,7 @@ func (f *reposFixture) post(t *testing.T, path string, body interface{}) *http.R
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:5151")
+	req.Header.Set("Authorization", "Bearer "+testReposToken)
 	resp, err := f.server.Client().Do(req)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
@@ -321,7 +334,7 @@ func TestRepos_NilGlobalDB(t *testing.T) {
 	wsDB, _ := db.Open(db.Options{WorkspaceRoot: wsRoot})
 	t.Cleanup(func() { _ = wsDB.Close() })
 
-	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), nil)
+	srv := NewServer(adapter, wsDB, wsRoot, scanner.NewJobStore(), ai.NewJobStore(3), store.NewProjectRegistry(), agentauth.PassthroughAuth())
 	// Deliberately do NOT call srv.SetGlobalDB — simulate dev server.
 
 	mux := http.NewServeMux()

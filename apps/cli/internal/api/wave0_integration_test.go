@@ -38,6 +38,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/docgraph"
@@ -108,7 +109,7 @@ func newWave0Fixture(t *testing.T) *wave0Fixture {
 		scanner.NewJobStore(),
 		ai.NewJobStore(3),
 		store.NewProjectRegistry(),
-		nil, // passthrough auth
+		agentauth.PassthroughAuth(),
 	)
 	srv.SetGlobalDB(gdb)
 	srv.SetKeyStore(&mockKeyIssuer{})
@@ -495,5 +496,25 @@ func TestWave0_SecurityHeadersOnEveryEndpoint(t *testing.T) {
 				t.Errorf("%s: X-Content-Type-Options = %q, want nosniff", ep, got)
 			}
 		})
+	}
+}
+
+// TestWave0_CSPHeaderMatchesE9Spec pins the exact Content-Security-Policy
+// value to the v2.0 string mandated by binding ruling E9 (vedox-v2
+// MASTER_PLAN). Any drift from this string — tightening, loosening, or
+// re-ordering — must be a deliberate edit to CSPHeaderValue with an ADR
+// update, not an accidental one-liner. This guards FIX-ARCH-09: the
+// previous implementation used "script-src 'none'" and was missing
+// style-src 'unsafe-inline', which would have broken Shiki rendering.
+func TestWave0_CSPHeaderMatchesE9Spec(t *testing.T) {
+	const wantCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'"
+
+	f := newWave0Fixture(t)
+	resp := f.get(t, "/api/health")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/api/health: status = %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Security-Policy"); got != wantCSP {
+		t.Errorf("Content-Security-Policy mismatch\n got: %q\nwant: %q", got, wantCSP)
 	}
 }

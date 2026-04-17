@@ -312,6 +312,33 @@ func (ks *KeyStore) Lookup(id string) (APIKey, bool) {
 	return k, ok
 }
 
+// keystoreCloser is the optional Close interface implemented by AgeStore (and
+// any future SecretStore backend that caches passphrase material in memory).
+// We test for it at runtime so the go-keyring / env backends, which have
+// nothing to close, are unaffected.
+type keystoreCloser interface {
+	Close() error
+}
+
+// Close releases any resources held by the underlying secret backend. For an
+// AgeStore this zeros the in-memory passphrase and unsets VEDOX_AGE_PASSPHRASE
+// so child processes spawned after shutdown cannot inherit it. For the legacy
+// go-keyring path and EnvStore, Close is a no-op.
+//
+// Close is idempotent and safe to call multiple times.
+func (ks *KeyStore) Close() error {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+	if ks.store == nil {
+		return nil
+	}
+	c, ok := ks.store.(keystoreCloser)
+	if !ok {
+		return nil
+	}
+	return c.Close()
+}
+
 // getSecret fetches the plaintext HMAC secret for the given key ID.
 //
 // When ks.store is non-nil the pluggable backend is used; otherwise it falls

@@ -256,13 +256,16 @@ func runForeground(p daemon.Paths) error {
 	jobStore := scanner.NewJobStore()
 	aiJobStore := ai.NewJobStore(3)
 	projectRegistry := store.NewProjectRegistry()
-	// Wire real HMAC agent authentication — PassthroughAuth was a placeholder.
+	// Wire real HMAC agent authentication. FIX-SEC-10: on keystore failure we
+	// fail CLOSED with RejectAllAuth (every request → 503 "key store
+	// unavailable") rather than fail OPEN with PassthroughAuth. An unhealthy
+	// keystore must never result in an unauthenticated agent surface.
 	ks, ksErr := agentauth.LoadKeyStore(p.Home)
 	var requireAgent agentauth.Middleware
 	if ksErr != nil {
-		slog.Warn("agent keystore unavailable; agent endpoints will reject all requests",
+		slog.Warn("agent keystore unavailable; agent endpoints will 503 until restart with a healthy keystore",
 			"error", ksErr)
-		requireAgent = agentauth.PassthroughAuth() // degrade: still start, but agents can't auth
+		requireAgent = agentauth.RejectAllAuth() // fail-closed: 503 on every agent route
 	} else {
 		requireAgent = agentauth.RequireAgent(ks)
 	}
@@ -418,6 +421,14 @@ func runForeground(p daemon.Paths) error {
 
 		aggregator = analytics.NewAggregator(wsDB, globalDB)
 		aggregator.Start(ctx)
+
+		// Wire the Collector into the API server so that user-action
+		// handlers (publish, repos/*, agent/install, onboarding/complete)
+		// can fire-and-forget events. SetCollector is safe to call after
+		// Mount: handlers read s.collector per request, not at mount time.
+		if apiServer != nil {
+			apiServer.SetCollector(collector)
+		}
 	}
 
 	// Start the voice pipeline if it was successfully constructed above.
@@ -527,6 +538,15 @@ func runForeground(p daemon.Paths) error {
 			slog.Warn("error closing global database", "error", err)
 		} else {
 			slog.Info("global database closed")
+		}
+	}
+
+	// Close the agent keystore so any AgeStore backend can zero its in-memory
+	// passphrase and unset VEDOX_AGE_PASSPHRASE before the daemon exits. For
+	// the legacy go-keyring / env backends this is a no-op.
+	if ks != nil {
+		if err := ks.Close(); err != nil {
+			slog.Warn("error closing agent keystore", "error", err)
 		}
 	}
 

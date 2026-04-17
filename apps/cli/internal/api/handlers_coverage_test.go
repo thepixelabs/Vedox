@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/scanner"
@@ -68,7 +69,7 @@ func newCoverageServer(t *testing.T) *coverageFixture {
 		jobStore,
 		ai.NewJobStore(3),
 		store.NewProjectRegistry(),
-		nil, // passthrough auth
+		agentauth.PassthroughAuth(),
 	)
 	// FIX-SEC-01: wire the bootstrap token so /api/browse is properly guarded
 	// even in coverage tests. Tests that call getWithToken supply this value.

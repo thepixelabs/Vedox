@@ -46,36 +46,60 @@ type DBWriter interface {
 
 // Collector holds the buffered channel and background goroutine that drain
 // events from callers into the workspace SQLite events table.
+//
+// Collector also owns a retention Pruner that runs on a daily cadence and
+// deletes events older than 365 days (FINAL_PLAN.md changelog item 5). The
+// pruner lifecycle is bound to the Collector's — Start starts both, Stop
+// stops both — so callers do not wire retention separately.
 type Collector struct {
 	db        DBWriter
 	sessionID string
 	ch        chan Event
 	done      chan struct{}
 	stopped   chan struct{}
+	pruner    *Pruner
 }
 
 // NewCollector creates a Collector backed by the given DBWriter. sessionID is
 // the per-daemon-start opaque identifier that is stored on every event row.
 // Call Start to launch the background goroutine before calling Emit.
+//
+// The Collector owns a retention Pruner at default settings (24h cadence,
+// 365d window) constructed here and started alongside the flush goroutine
+// in Start. Tests that need a non-default pruner can use
+// NewCollectorWithPruner.
 func NewCollector(db DBWriter, sessionID string) *Collector {
+	return NewCollectorWithPruner(db, sessionID, PrunerConfig{})
+}
+
+// NewCollectorWithPruner is NewCollector with an explicit PrunerConfig. Use
+// this in tests to shrink the prune interval / retention window for fast
+// assertions; pass a zero PrunerConfig for production defaults.
+func NewCollectorWithPruner(db DBWriter, sessionID string, pcfg PrunerConfig) *Collector {
 	return &Collector{
 		db:        db,
 		sessionID: sessionID,
 		ch:        make(chan Event, collectorBufferSize),
 		done:      make(chan struct{}),
 		stopped:   make(chan struct{}),
+		pruner:    NewPruner(db, pcfg),
 	}
 }
 
-// Start launches the background flush goroutine. It runs until ctx is
-// cancelled or Stop is called. Start must be called exactly once.
+// Start launches the background flush goroutine and the retention pruner.
+// Both run until ctx is cancelled or Stop is called. Start must be called
+// exactly once.
 func (c *Collector) Start(ctx context.Context) {
+	if c.pruner != nil {
+		c.pruner.Start(ctx)
+	}
 	go c.run(ctx)
 }
 
-// Stop signals the flush goroutine to drain any remaining buffered events and
-// exit. It blocks until the goroutine has finished. Safe to call more than
-// once (subsequent calls are no-ops after the first).
+// Stop signals the flush goroutine to drain any remaining buffered events
+// and exit, then stops the retention pruner. It blocks until both
+// goroutines have finished. Safe to call more than once (subsequent calls
+// are no-ops after the first).
 func (c *Collector) Stop() {
 	select {
 	case <-c.done:
@@ -84,19 +108,32 @@ func (c *Collector) Stop() {
 		close(c.done)
 	}
 	<-c.stopped
+	if c.pruner != nil {
+		c.pruner.Stop()
+	}
 }
 
 // Emit validates the event and enqueues it for asynchronous insertion.
 // If the buffer is full the event is dropped and a warning is logged —
 // analytics data loss is always preferable to blocking the caller.
 // Emit is safe to call concurrently from multiple goroutines.
+//
+// The Collector's own sessionID is substituted when the caller leaves
+// Event.SessionID empty. The substitution happens BEFORE Validate() so
+// callers that rely on the Collector-owned session (the common case for
+// HTTP handlers that do not track their own sessions) don't fail
+// validation with "SessionID must not be empty".
 func (c *Collector) Emit(e Event) error {
-	if err := e.Validate(); err != nil {
-		return err
-	}
-	// Set SessionID from the Collector if the caller did not set one.
+	// Inherit the collector's sessionID when the caller leaves it empty.
+	// This is done before Validate so the required-field check still
+	// catches the truly pathological case where both the caller and the
+	// collector have an empty sessionID (a construction bug worth
+	// surfacing).
 	if e.SessionID == "" {
 		e.SessionID = c.sessionID
+	}
+	if err := e.Validate(); err != nil {
+		return err
 	}
 	select {
 	case c.ch <- e:

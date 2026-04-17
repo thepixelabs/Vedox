@@ -401,6 +401,13 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Emit document.published. Fire-and-forget: if the collector is nil
+	// (dev-server) or its buffer is full, the publish still succeeds.
+	s.emitEvent("document.published", map[string]any{
+		"project": project,
+		"path":    relPath,
+	})
+
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "published",
 		"path":   relPath,
