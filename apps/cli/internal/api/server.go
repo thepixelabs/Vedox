@@ -291,6 +291,10 @@ func (s *Server) Mount(mux *http.ServeMux) {
 		r.Get("/generate-names/{jobId}", s.handleGenerateNamesStatus)
 	})
 
+	// Git status — branch, dirty flag, ahead/behind counters for the editor
+	// status bar. Best-effort: never returns an error status (see handler doc).
+	r.Get("/api/projects/{project}/git/status", s.handleGitStatus)
+
 	// Full-text search within a project.
 	r.Get("/api/projects/{project}/search", s.handleSearch)
 

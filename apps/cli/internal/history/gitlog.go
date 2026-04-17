@@ -254,9 +254,21 @@ func validateRepoPath(p string) error {
 	return nil
 }
 
+// safeFilePathRE is the allowlist for file paths accepted by gitlog. Only
+// alphanumerics, dot, underscore, forward-slash, and hyphen are permitted.
+// This explicitly excludes colon (alternate-ref smuggling), NUL (argv
+// truncation), shell metacharacters, and anything that cannot appear in a
+// clean POSIX repo-relative path.
+var safeFilePathRE = regexp.MustCompile(`^[a-zA-Z0-9_./-]+$`)
+
 // validateFilePath rejects inputs that would be mis-parsed by git or the
-// filesystem. The character blocklist matches gitlog's path contract: repo-
-// relative POSIX paths without shell metacharacters, NUL, or leading dashes.
+// filesystem. Applies a strict allowlist (alphanumeric, dot, underscore,
+// slash, hyphen) and additionally rejects:
+//   - empty paths
+//   - leading dash (git option smuggling)
+//   - NUL bytes (argv truncation / CWE-78)
+//   - colon (alternate-ref smuggling in `git show <ref>:<path>`)
+//   - ".." path components (directory traversal outside the repo worktree)
 func validateFilePath(p string) error {
 	if p == "" {
 		return fmt.Errorf("history: filePath must not be empty")
@@ -266,6 +278,19 @@ func validateFilePath(p string) error {
 	}
 	if strings.ContainsRune(p, 0) {
 		return fmt.Errorf("history: filePath must not contain NUL")
+	}
+	if strings.ContainsRune(p, ':') {
+		return fmt.Errorf("history: filePath must not contain ':'")
+	}
+	// Reject any path component equal to ".." — prevents escaping the repo
+	// worktree when the path is resolved by git relative to the repo root.
+	for _, component := range strings.Split(p, "/") {
+		if component == ".." {
+			return fmt.Errorf("history: filePath must not contain '..' components")
+		}
+	}
+	if !safeFilePathRE.MatchString(p) {
+		return fmt.Errorf("history: filePath contains disallowed characters (only [a-zA-Z0-9_./-] permitted)")
 	}
 	return nil
 }

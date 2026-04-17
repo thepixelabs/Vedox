@@ -28,6 +28,11 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/vedox/vedox/internal/agentauth"
+	"github.com/vedox/vedox/internal/ai"
+	"github.com/vedox/vedox/internal/db"
+	"github.com/vedox/vedox/internal/scanner"
+	"github.com/vedox/vedox/internal/store"
 	"github.com/vedox/vedox/internal/testutil"
 )
 
@@ -264,5 +269,93 @@ func TestHandleGitStatus_AheadBehindRemote(t *testing.T) {
 	}
 	if got.Dirty {
 		t.Errorf("Dirty = true, want false (no uncommitted changes)")
+	}
+}
+
+// ── Integration test — route wiring through full chi stack ────────────────────
+
+// newGitStatusServer spins up a full API server whose workspace root is set
+// to the parent directory of the supplied repo. It is analogous to
+// newTestServer in api_integration_test.go but accepts a pre-built TestRepo
+// so the integration test controls git state before the server starts.
+func newGitStatusServer(t *testing.T, workspaceRoot string) *httptest.Server {
+	t.Helper()
+
+	resolved, err := filepath.EvalSymlinks(workspaceRoot)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+
+	adapter, err := store.NewLocalAdapter(resolved, nil)
+	if err != nil {
+		t.Fatalf("NewLocalAdapter: %v", err)
+	}
+
+	dbStore, err := db.Open(db.Options{WorkspaceRoot: resolved})
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = dbStore.Close() })
+
+	srv := NewServer(
+		adapter,
+		dbStore,
+		resolved,
+		scanner.NewJobStore(),
+		ai.NewJobStore(3),
+		store.NewProjectRegistry(),
+		agentauth.PassthroughAuth(),
+	)
+
+	mux := http.NewServeMux()
+	srv.Mount(mux)
+
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// TestGitStatusRoute_Integration verifies that GET /api/projects/{project}/git/status
+// is wired through the full chi router stack produced by Server.Mount and
+// returns the expected JSON shape for a real git repository.
+//
+// This test guards against the dead-route failure mode: handleGitStatus
+// existing in git_status.go but not registered in Mount(), which would cause
+// the frontend status bar to receive 404s and silently degrade.
+func TestGitStatusRoute_Integration(t *testing.T) {
+	repo := testutil.NewTestRepo(t)
+	repo.CommitFile("doc.md", "hello\n", "initial commit")
+
+	// Dirty the working tree so we can assert Dirty=true and confirm the full
+	// handler path executed (not just a stub 200).
+	repo.WriteFile("doc.md", "modified\n")
+
+	// workspaceRoot is the parent directory; the project name is the repo dir name.
+	workspace := filepath.Dir(repo.Path())
+	project := filepath.Base(repo.Path())
+
+	ts := newGitStatusServer(t, workspace)
+
+	url := ts.URL + "/api/projects/" + project + "/git/status"
+	resp, err := ts.Client().Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var got gitStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.Branch != "main" {
+		t.Errorf("Branch = %q, want %q", got.Branch, "main")
+	}
+	if !got.Dirty {
+		t.Errorf("Dirty = false, want true (working tree was modified before request)")
 	}
 }

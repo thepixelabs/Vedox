@@ -4,8 +4,13 @@ package ai
 // BinaryForProvider, and overrideEnv. Previously 0% covered.
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestInvocationForProvider_AllKnownProviders verifies that every declared
@@ -176,5 +181,42 @@ func TestOverrideEnv_EmptyInput(t *testing.T) {
 	out := overrideEnv(nil, "FOO", "bar")
 	if len(out) != 1 || out[0] != "FOO=bar" {
 		t.Errorf("overrideEnv(nil, FOO, bar) = %v, want [FOO=bar]", out)
+	}
+}
+
+// TestProbeVersion_HangingBinaryTimesOut verifies that probeVersion enforces
+// the 2-second probeTimeout even when the binary forks long-lived children.
+//
+// The stub is a shell script that does nothing but `sleep 10`. After the
+// parent shell is killed, its child `sleep` process holds the stdout pipe
+// open. Without the process-group SIGKILL in probeVersion, Output() would
+// block for the full 10 seconds (or until the OS reaps the orphan).
+//
+// We assert that probeVersion returns within 3 seconds — 1 second of
+// headroom above the 2-second probeTimeout — and that the returned string
+// is empty because the process never printed anything before it was killed.
+func TestProbeVersion_HangingBinaryTimesOut(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stub shell script not supported on Windows")
+	}
+
+	// Write a shell script that sleeps far beyond the probe timeout.
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "hanging-provider")
+	script := fmt.Sprintf("#!/bin/sh\nsleep 10\n")
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile stub: %v", err)
+	}
+
+	const deadline = 3 * time.Second
+	start := time.Now()
+	version := probeVersion(stub)
+	elapsed := time.Since(start)
+
+	if elapsed > deadline {
+		t.Errorf("probeVersion took %v, want ≤ %v (probe timeout not enforced)", elapsed, deadline)
+	}
+	if version != "" {
+		t.Errorf("probeVersion = %q, want empty (stub never printed before killed)", version)
 	}
 }

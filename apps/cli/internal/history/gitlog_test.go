@@ -297,6 +297,81 @@ func TestFileAtCommit_RejectsColonInPath(t *testing.T) {
 	}
 }
 
+// TestFileAtCommit_RejectsAlternateRefSmuggling is the adversarial test for
+// FIX-SEC-09: a path containing multiple colons attempts to redirect `git show`
+// to an entirely different ref:path combination (alternate-ref smuggling).
+// e.g. "x:HEAD:../../etc/passwd" — if git received "<sha>:x:HEAD:../../etc/passwd"
+// it would resolve the object reference using the colon-delimited ref syntax.
+// The guard must reject this before invoking git.
+func TestFileAtCommit_RejectsAlternateRefSmuggling(t *testing.T) {
+	repoRoot, _ := makeTempRepo(t)
+	sha := strings.Repeat("a", 40)
+
+	adversarialPaths := []string{
+		"x:HEAD:../../etc/passwd",                // canonical SEC-09 payload
+		"docs/guide.md:refs/heads/main:evil.md", // ref smuggle via deep colon
+		"ok/file.md:",                             // trailing colon
+		":leading-colon.md",                       // leading colon
+		"a::b",                                    // double colon
+	}
+	for _, p := range adversarialPaths {
+		_, err := fileAtCommit(context.Background(), repoRoot, p, sha)
+		if err == nil {
+			t.Errorf("fileAtCommit: expected rejection of %q, got nil error", p)
+		}
+	}
+}
+
+// TestFileAtCommit_RejectsPathTraversal verifies that "../" components are
+// rejected so a caller cannot escape the repo worktree via git show.
+func TestFileAtCommit_RejectsPathTraversal(t *testing.T) {
+	repoRoot, _ := makeTempRepo(t)
+	sha := strings.Repeat("a", 40)
+
+	traversalPaths := []string{
+		"../../etc/passwd",
+		"docs/../../etc/shadow",
+		"../sibling-repo/secrets.env",
+		"..",
+	}
+	for _, p := range traversalPaths {
+		_, err := fileAtCommit(context.Background(), repoRoot, p, sha)
+		if err == nil {
+			t.Errorf("fileAtCommit: expected rejection of traversal path %q, got nil error", p)
+		}
+	}
+}
+
+// TestValidateFilePath_AllowlistEnforced verifies the strict character allowlist
+// rejects paths with shell metacharacters, spaces, or other disallowed bytes.
+func TestValidateFilePath_AllowlistEnforced(t *testing.T) {
+	bad := []string{
+		"docs/file name.md",  // space
+		"docs/file;rm -rf /", // semicolon
+		"docs/$(whoami).md",  // command substitution
+		"docs/\tfile.md",     // tab
+		"docs/file|pipe.md",  // pipe
+		"docs/file&.md",      // ampersand
+	}
+	for _, p := range bad {
+		if err := validateFilePath(p); err == nil {
+			t.Errorf("validateFilePath(%q): expected rejection, got nil", p)
+		}
+	}
+
+	good := []string{
+		"docs/guide.md",
+		"docs/sub-dir/file_name.md",
+		"README.md",
+		"v2/api/endpoints.md",
+	}
+	for _, p := range good {
+		if err := validateFilePath(p); err != nil {
+			t.Errorf("validateFilePath(%q): expected acceptance, got %v", p, err)
+		}
+	}
+}
+
 // TestFileAtCommit_RejectsBadSHA verifies that an obviously bogus commit hash
 // is rejected before the subprocess runs.
 func TestFileAtCommit_RejectsBadSHA(t *testing.T) {

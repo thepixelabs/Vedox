@@ -204,8 +204,17 @@
             {/if}
           </span>
         </label>
-        {#if ps?.status === 'error' && ps.error}
-          <p class="step-agent__provider-error" role="alert">{ps.error}</p>
+        {#if ps?.status === 'error'}
+          <div class="step-agent__provider-error-row">
+            <p class="step-agent__provider-error" role="alert">{ps.error}</p>
+            <button
+              class="step-agent__retry-btn"
+              type="button"
+              disabled={anyInstalling}
+              onclick={() => installProvider(provider.id)}
+              aria-label="retry {provider.label} install"
+            >./retry</button>
+          </div>
         {/if}
       </li>
     {/each}
@@ -387,12 +396,44 @@
     cursor: help;
   }
 
-  .step-agent__provider-error {
+  .step-agent__provider-error-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
     margin: 0 0 var(--space-2) calc(var(--space-3) + 14px + var(--space-3));
+  }
+
+  .step-agent__provider-error {
+    margin: 0;
     font-size: 11px;
     font-family: var(--font-mono);
-    color: var(--color-error, #e53e3e);
+    color: var(--color-error, oklch(55% 0.2 25));
     line-height: 1.4;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .step-agent__retry-btn {
+    flex-shrink: 0;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-error, oklch(55% 0.2 25));
+    background: transparent;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--color-error, oklch(55% 0.2 25));
+    cursor: pointer;
+    line-height: 1.4;
+    transition: background-color 80ms var(--ease-out), opacity 80ms var(--ease-out);
+  }
+
+  .step-agent__retry-btn:hover:not(:disabled) {
+    background-color: oklch(from var(--color-error, oklch(55% 0.2 25)) l c h / 0.1);
+  }
+
+  .step-agent__retry-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* ── Offline note ── */

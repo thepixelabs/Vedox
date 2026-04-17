@@ -147,7 +147,7 @@ describe('InstallAgent (onboarding step 3)', () => {
     expect(screen.getByRole('button', { name: /continue/i })).toBeInTheDocument();
   });
 
-  it('shows the error indicator and leaves the install button enabled for retry on a non-2xx response', async () => {
+  it('shows the error indicator and a per-provider retry button on a non-2xx response', async () => {
     const fetchMock = mockFetchError('daemon offline');
     renderInstallAgent();
 
@@ -158,15 +158,29 @@ describe('InstallAgent (onboarding step 3)', () => {
     expect(await screen.findByLabelText(/install failed/i)).toBeInTheDocument();
     expect(await screen.findByRole('alert')).toHaveTextContent('daemon offline');
 
-    // The button remains the install button (label resets from "installing...")
-    // and is still enabled so the user can re-trigger — this is the component's
-    // de-facto retry path. NOTE: there is no dedicated "Retry" button, which is
-    // a UX gap worth surfacing.
-    const installBtn = await screen.findByRole('button', { name: /install selected/i });
-    expect(installBtn).toBeEnabled();
+    // A dedicated per-provider retry button renders next to the error.
+    const retryBtn = await screen.findByRole('button', { name: /retry google gemini install/i });
+    expect(retryBtn).toBeInTheDocument();
+    expect(retryBtn).toBeEnabled();
+  });
 
-    // Re-clicking should fire fetch again.
-    await fireEvent.click(installBtn);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  it('retry button re-fires install for that provider only', async () => {
+    const fetchMock = mockFetchError('daemon offline');
+    renderInstallAgent();
+
+    await fireEvent.click(screen.getByRole('checkbox', { name: /select google gemini/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /install selected/i }));
+
+    const retryBtn = await screen.findByRole('button', { name: /retry google gemini install/i });
+
+    // Swap fetch to succeed on the retry so we can assert the done state.
+    mockFetchOk();
+    await fireEvent.click(retryBtn);
+
+    // First call was the failing install, second is the retry for that single provider.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    // Provider should now show "Installed".
+    expect(await screen.findByLabelText('Installed')).toBeInTheDocument();
   });
 });
