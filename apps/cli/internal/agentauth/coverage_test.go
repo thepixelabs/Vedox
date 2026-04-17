@@ -529,63 +529,39 @@ func TestLoadKeyStore_UnreadableFile(t *testing.T) {
 // asVDX — middleware helper
 // ---------------------------------------------------------------------------
 
-// TestAsVDX_WithVedoxError verifies that asVDX returns true and populates
-// the output pointer when given a *VedoxError.
-func TestAsVDX_WithVedoxError(t *testing.T) {
-	import_vdxerr := func() interface{ Code() string } { return nil }
-	_ = import_vdxerr
-	// We access vdxerr indirectly via the agentauth package's own imports.
-	// The simplest way to get a *vdxerr.VedoxError without importing the
-	// errors package directly is to call a function that returns one.
-	// IssueKey with a bad keychain setup is the easiest trigger, but the
-	// mock keyring never errors. Instead we test asVDX with a plain error
-	// to verify the false-return path, and with a wrapped VedoxError via
-	// the RevokeKey path which constructs one for a missing keychain entry.
-	//
-	// For the true-return path we can call asVDX directly with a type that
-	// implements *vdxerr.VedoxError. Since we're in the same package we can
-	// use the vdxerr import inside agentauth.go's package scope by
-	// constructing the error via getSecret on a key whose keychain entry has
-	// been deleted after issuance.
-	keyring.MockInit()
-	ks := newTestStore(t)
-	id, _, err := ks.IssueKey("agent", "", "")
-	if err != nil {
-		t.Fatalf("IssueKey: %v", err)
+// TestAsVDX_PlainError verifies asVDX returns false when given a non-VedoxError.
+func TestAsVDX_PlainError(t *testing.T) {
+	var result *vdxerr.VedoxError
+	if asVDX(fmt.Errorf("not a VedoxError"), &result) {
+		t.Error("expected asVDX to return false for a plain error")
 	}
-	// Delete the keychain entry so getSecret returns a plain error (not VDX-302).
-	if err := keyring.Delete(keychainService, id); err != nil {
-		t.Fatalf("delete keychain: %v", err)
+	if result != nil {
+		t.Errorf("expected result to remain nil, got %+v", result)
 	}
-	// getSecret should now return an error but NOT a VedoxError.
-	secret, err := ks.getSecret(id)
-	if secret != "" {
-		t.Error("expected empty secret")
-	}
-	if err == nil {
-		t.Fatal("expected error from getSecret with deleted keychain entry")
-	}
-	// asVDX should return false for a plain non-VedoxError.
-	var out interface{ GetCode() string }
-	_ = out
-	// We can't import the VedoxError type here without adding a dependency,
-	// so we test asVDX's false path via the err returned above.
-	// The false path of asVDX (plain error, no VedoxError) is the one we can reach.
-	var vdx interface{} // placeholder — see below
-	_ = vdx
-	// Direct call: asVDX with a plain fmt.Errorf error must return false.
-	import_errors := fmt.Errorf("plain error") // just to exercise the package
-	_ = import_errors
 }
 
-// TestAsVDX_DirectFalsePath calls asVDX with a plain error and verifies it
-// returns false without panicking.
-func TestAsVDX_DirectFalsePath(t *testing.T) {
-	import_fmt := fmt.Errorf
-	plainErr := import_fmt("not a VedoxError")
-	// Use the real type from the vdxerr import that agentauth's package already has.
+// TestAsVDX_NilError verifies asVDX handles a nil error without panicking.
+func TestAsVDX_NilError(t *testing.T) {
 	var result *vdxerr.VedoxError
-	if asVDX(plainErr, &result) {
-		t.Error("expected asVDX to return false for a plain error")
+	if asVDX(nil, &result) {
+		t.Error("expected asVDX to return false for a nil error")
+	}
+}
+
+// TestAsVDX_WrappedVedoxError verifies asVDX unwraps through fmt.Errorf
+// wrappers to find a *VedoxError at any depth in the chain.
+func TestAsVDX_WrappedVedoxError(t *testing.T) {
+	inner := vdxerr.Wrap(vdxerr.ErrKeychainUnavailable, "keychain boom", fmt.Errorf("underlying"))
+	wrapped := fmt.Errorf("context: %w", fmt.Errorf("deeper: %w", inner))
+
+	var result *vdxerr.VedoxError
+	if !asVDX(wrapped, &result) {
+		t.Fatal("expected asVDX to unwrap to *VedoxError")
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result pointer")
+	}
+	if result.Code != vdxerr.ErrKeychainUnavailable {
+		t.Errorf("unwrapped wrong error: got code %q, want %q", result.Code, vdxerr.ErrKeychainUnavailable)
 	}
 }

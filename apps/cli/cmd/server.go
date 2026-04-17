@@ -26,6 +26,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -37,6 +39,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
@@ -44,6 +47,7 @@ import (
 	"github.com/vedox/vedox/internal/api"
 	"github.com/vedox/vedox/internal/daemon"
 	globaldb "github.com/vedox/vedox/internal/db"
+	"github.com/vedox/vedox/internal/docgraph"
 	"github.com/vedox/vedox/internal/portcheck"
 	"github.com/vedox/vedox/internal/registry"
 	"github.com/vedox/vedox/internal/scanner"
@@ -203,10 +207,20 @@ func runForeground(p daemon.Paths) error {
 		return fmt.Errorf("[VDX-D08] %w", err)
 	}
 	if serverStartFlags.foreground {
-		// Print token to stderr only — stdout may be captured by supervisor logs.
-		// The token is also written to ~/.vedox/daemon-token (0600).
-		fmt.Fprintf(os.Stderr, "vedox daemon token: %s\n", token)
-		fmt.Fprintf(os.Stderr, "editor URL: http://%s?token=%s\n", listenAddr, token)
+		// HIGH-02 re-audit fix: only print the token to stderr when stderr is
+		// an interactive terminal. In launchd/systemd/journald contexts stderr
+		// is captured to the system log — where any process that can read the
+		// journal can recover the bearer credential. The token is always
+		// available at ~/.vedox/daemon-token (0600) for programmatic callers,
+		// so the stderr banner is strictly a human-ergonomics affordance.
+		if isatty.IsTerminal(os.Stderr.Fd()) {
+			fmt.Fprintf(os.Stderr, "vedox daemon token: %s\n", token)
+			fmt.Fprintf(os.Stderr, "editor URL: http://%s?token=%s\n", listenAddr, token)
+		} else {
+			fmt.Fprintf(os.Stderr,
+				"vedox daemon listening on %s (token written to daemon-token file)\n",
+				listenAddr)
+		}
 	}
 
 	// Open the global database (~/.vedox/global.db).
@@ -265,12 +279,24 @@ func runForeground(p daemon.Paths) error {
 	}
 
 	// Generate a session ID for this daemon run (used by the analytics Collector
-	// to tag every event with the current session). We reuse the bootstrap token
-	// truncated to 16 hex chars — unique enough per process lifetime.
-	sessionID := token
-	if len(sessionID) > 16 {
-		sessionID = sessionID[:16]
+	// to tag every event with the current session).
+	//
+	// HIGH-02 re-audit fix: previously we derived sessionID from token[:16],
+	// which embedded half the bootstrap credential into analytics rows stored
+	// in GlobalDB. If an attacker exfiltrated analytics (e.g. via a leaked
+	// database dump) they would have partial token material to brute-force.
+	// The session ID has no relationship to authentication — generate fresh
+	// entropy so token leakage and analytics leakage are uncorrelated.
+	var sessionBytes [8]byte
+	if _, err := rand.Read(sessionBytes[:]); err != nil {
+		// Fall back to a timestamp-derived value so startup never blocks on a
+		// broken RNG. This is analytics metadata, not a security boundary.
+		ts := time.Now().UnixNano()
+		for i := range sessionBytes {
+			sessionBytes[i] = byte(ts >> (i * 8))
+		}
 	}
+	sessionID := hex.EncodeToString(sessionBytes[:])
 
 	// Declare analytics pipeline handles; started below after ctx is created.
 	var (
@@ -281,18 +307,18 @@ func runForeground(p daemon.Paths) error {
 	// Construct the API server. Mount is deferred until after the voice pipeline
 	// is wired so that voice routes are registered on the chi router before the
 	// router is mounted on the stdlib mux.
-	var apiServer *api.Server
-	if docStore != nil {
-		apiServer = api.NewServer(docStore, wsDB, workspaceRoot, jobStore, aiJobStore, projectRegistry, requireAgent)
-		if globalDB != nil {
-			apiServer.SetGlobalDB(globalDB)
-		}
-		if ks != nil {
-			apiServer.SetKeyStore(ks)
-		}
-		// FIX-SEC-01: wire the bootstrap token so /api/browse requires auth.
-		apiServer.SetBootstrapToken(token)
-	}
+	apiServer := buildDaemonAPIServer(daemonAPIDeps{
+		DocStore:        docStore,
+		WorkspaceDB:     wsDB,
+		WorkspaceRoot:   workspaceRoot,
+		JobStore:        jobStore,
+		AIJobStore:      aiJobStore,
+		ProjectRegistry: projectRegistry,
+		RequireAgent:    requireAgent,
+		GlobalDB:        globalDB,
+		KeyStore:        ks,
+		BootstrapToken:  token,
+	})
 
 	// Root placeholder.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -785,6 +811,72 @@ func runServerUninstall(_ *cobra.Command, _ []string) error {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+// daemonAPIDeps bundles every dependency required to construct and wire a
+// fully-featured *api.Server for the daemon. Pulling this struct out of
+// runForeground makes the wiring independently unit-testable (see
+// server_wiring_test.go): the test constructs the same deps, calls
+// buildDaemonAPIServer, and then mounts + probes the returned server.
+//
+// Optional fields (GlobalDB, KeyStore, BootstrapToken) may be zero — the
+// builder skips the corresponding Set* call when they are absent, matching
+// the graceful-degradation behaviour the daemon exhibits at startup.
+type daemonAPIDeps struct {
+	DocStore        store.DocStore
+	WorkspaceDB     *globaldb.Store
+	WorkspaceRoot   string
+	JobStore        *scanner.JobStore
+	AIJobStore      *ai.JobStore
+	ProjectRegistry *store.ProjectRegistry
+	RequireAgent    agentauth.Middleware
+	GlobalDB        *globaldb.GlobalDB
+	KeyStore        *agentauth.KeyStore
+	BootstrapToken  string
+}
+
+// buildDaemonAPIServer constructs a fully-wired *api.Server and applies every
+// Set* injection required for the daemon's advertised endpoint surface:
+//
+//	GlobalDB       → /api/analytics/*, /api/repos/*, /api/agent/install upserts
+//	KeyStore       → /api/agent/{install,uninstall}
+//	BootstrapToken → /api/browse (requireBootstrapToken middleware)
+//	GraphStore     → /api/graph (built from WorkspaceDB when present)
+//
+// Returns nil when DocStore is nil — matching the legacy guard in
+// runForeground where the daemon simply does not mount /api/* if the
+// workspace DocStore could not be initialised.
+func buildDaemonAPIServer(d daemonAPIDeps) *api.Server {
+	if d.DocStore == nil {
+		return nil
+	}
+	apiServer := api.NewServer(
+		d.DocStore,
+		d.WorkspaceDB,
+		d.WorkspaceRoot,
+		d.JobStore,
+		d.AIJobStore,
+		d.ProjectRegistry,
+		d.RequireAgent,
+	)
+	if d.GlobalDB != nil {
+		apiServer.SetGlobalDB(d.GlobalDB)
+	}
+	if d.KeyStore != nil {
+		apiServer.SetKeyStore(d.KeyStore)
+	}
+	// FIX-SEC-01: wire the bootstrap token so /api/browse requires auth.
+	// An empty token is fail-closed — the middleware rejects every request.
+	apiServer.SetBootstrapToken(d.BootstrapToken)
+
+	// Wire the doc-reference GraphStore so /api/graph returns 200 instead of
+	// 503. The GraphStore shares the workspace db.Store's single-writer
+	// funnel and read-only pool; its lifetime is bound to WorkspaceDB
+	// (closed on shutdown by the caller).
+	if d.WorkspaceDB != nil {
+		apiServer.SetGraphStore(docgraph.NewGraphStore(d.WorkspaceDB))
+	}
+	return apiServer
+}
 
 // formatDuration formats a duration as "2h14m" style (omitting zero fields).
 func formatDuration(d time.Duration) string {

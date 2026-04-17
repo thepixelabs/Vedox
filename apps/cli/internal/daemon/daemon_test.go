@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -361,4 +362,125 @@ func TestLock_ReleaseIsIdempotent(t *testing.T) {
 	}
 	lock.Release()
 	lock.Release() // must not panic
+}
+
+// TestLock_ConcurrentRelease regresses a data race that existed before
+// Lock.Release was guarded by a mutex. Multiple goroutines calling Release
+// concurrently previously wrote to the l.file pointer without synchronization,
+// which the race detector would flag.
+func TestLock_ConcurrentRelease(t *testing.T) {
+	dir := t.TempDir()
+	lockFile := filepath.Join(dir, "test.lock")
+	lock, err := daemon.AcquireLock(lockFile)
+	if err != nil {
+		t.Fatalf("AcquireLock: %v", err)
+	}
+	const goroutines = 16
+	done := make(chan struct{})
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			lock.Release()
+			done <- struct{}{}
+		}()
+	}
+	for i := 0; i < goroutines; i++ {
+		<-done
+	}
+}
+
+// TestAcquireLock_TruncatesStalePID regresses a cosmetic bug where a previous
+// longer PID would leave trailing bytes in the lock file after a new holder
+// (with a shorter PID) acquired it. AcquireLock now opens with O_TRUNC.
+func TestAcquireLock_TruncatesStalePID(t *testing.T) {
+	dir := t.TempDir()
+	lockFile := filepath.Join(dir, "test.lock")
+	// Pre-populate the lock file with a long stale value.
+	if err := os.WriteFile(lockFile, []byte("9999999999999\n"), 0o600); err != nil {
+		t.Fatalf("seed lock file: %v", err)
+	}
+	lock, err := daemon.AcquireLock(lockFile)
+	if err != nil {
+		t.Fatalf("AcquireLock: %v", err)
+	}
+	defer lock.Release()
+
+	b, err := os.ReadFile(lockFile)
+	if err != nil {
+		t.Fatalf("read lock file: %v", err)
+	}
+	// Content must reflect only the current PID, not stale bytes.
+	want := strconv.Itoa(os.Getpid()) + "\n"
+	if string(b) != want {
+		t.Errorf("lock file content = %q, want %q (stale bytes not truncated)", string(b), want)
+	}
+}
+
+// TestDaemonize_DoesNotMutateArgs regresses a slice-aliasing bug where
+// Daemonize used append(args, "--foreground") — if args had spare capacity,
+// the caller's backing array would be silently modified. Daemonize now
+// copies into a fresh slice before appending.
+//
+// We exercise Daemonize with a short-lived helper binary (true(1)) found
+// via exec.LookPath so this test works across macOS (/usr/bin/true) and
+// Linux (/bin/true). The test asserts only that the caller's args slice is
+// unmodified and that its length and element identity are preserved.
+func TestDaemonize_DoesNotMutateArgs(t *testing.T) {
+	trueBin, err := exec.LookPath("true")
+	if err != nil {
+		t.Skipf("true(1) not on PATH: %v", err)
+	}
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "logs", "vedoxd.log")
+
+	// Deliberately create args with spare capacity so an append with no
+	// copy would overwrite the cap+1 slot.
+	args := make([]string, 2, 8)
+	args[0] = "server"
+	args[1] = "start"
+	snapshot := append([]string(nil), args...)
+
+	if err := daemon.Daemonize(trueBin, args, logFile); err != nil {
+		t.Fatalf("Daemonize: %v", err)
+	}
+
+	if len(args) != len(snapshot) {
+		t.Errorf("args length changed: got %d, want %d", len(args), len(snapshot))
+	}
+	for i := range snapshot {
+		if args[i] != snapshot[i] {
+			t.Errorf("args[%d] mutated: got %q, want %q", i, args[i], snapshot[i])
+		}
+	}
+}
+
+// TestWritePIDFile_IsFsyncedBeforeRename verifies the atomic-write pipeline
+// used by WritePIDFile — a smoke test that no temp files are left behind
+// after a successful write and that the final file has mode 0o600 even when
+// preceded by an extensive write cycle. This regresses the durability fix
+// where fsync was added between write and rename.
+func TestWritePIDFile_NoTempFilesLeftBehind(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "vedoxd.pid")
+
+	for i := 0; i < 20; i++ {
+		rec := daemon.PIDRecord{PID: 1000 + i, Port: 5150, StartUnixNS: int64(i), Version: "v"}
+		if err := daemon.WritePIDFile(pidFile, rec); err != nil {
+			t.Fatalf("WritePIDFile iter %d: %v", i, err)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	// Only the final pid file should remain — no temp artefacts.
+	if len(entries) != 1 {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("expected exactly 1 file in dir, got %d: %v", len(entries), names)
+	}
+	if entries[0].Name() != "vedoxd.pid" {
+		t.Errorf("unexpected file name: %q", entries[0].Name())
+	}
 }

@@ -22,6 +22,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"sync"
 )
 
 const (
@@ -78,6 +79,10 @@ type AudioSource interface {
 //     PTT timeout tests.
 //
 // ChunkSamples defaults to DefaultChunkSamples if zero.
+//
+// StubAudioSource is safe for concurrent Start/Stop calls — the internal
+// channels are guarded by mu so Start and Stop may race without triggering
+// the race detector.
 type StubAudioSource struct {
 	// FilePath, if non-empty, is the path to a raw PCM float32 file to read.
 	// The file must contain IEEE-754 little-endian float32 samples at 16 kHz mono.
@@ -87,6 +92,7 @@ type StubAudioSource struct {
 	// Defaults to DefaultChunkSamples when zero.
 	ChunkSamples int
 
+	mu     sync.Mutex
 	stopCh chan struct{}
 	doneCh chan struct{}
 }
@@ -106,22 +112,28 @@ func (s *StubAudioSource) Start(ctx context.Context) (<-chan []float32, error) {
 
 	// Buffered so the goroutine can queue a couple of chunks without blocking.
 	out := make(chan []float32, 4)
+	s.mu.Lock()
 	s.stopCh = make(chan struct{})
 	s.doneCh = make(chan struct{})
+	stopCh := s.stopCh
+	doneCh := s.doneCh
+	s.mu.Unlock()
 
 	if s.FilePath != "" {
-		go s.runFile(ctx, out, chunkSize)
+		go s.runFile(ctx, out, chunkSize, stopCh, doneCh)
 	} else {
-		go s.runSilence(ctx, out, chunkSize)
+		go s.runSilence(ctx, out, chunkSize, stopCh, doneCh)
 	}
 
 	return out, nil
 }
 
-// runFile reads float32 samples from a file and emits them in chunks.
-func (s *StubAudioSource) runFile(ctx context.Context, out chan<- []float32, chunkSize int) {
+// runFile reads float32 samples from a file and emits them in chunks. The
+// stopCh/doneCh are passed in (captured at Start time) so Stop can replace
+// the fields in s without racing the running goroutine.
+func (s *StubAudioSource) runFile(ctx context.Context, out chan<- []float32, chunkSize int, stopCh, doneCh chan struct{}) {
 	defer close(out)
-	defer close(s.doneCh)
+	defer close(doneCh)
 
 	f, err := os.Open(s.FilePath)
 	if err != nil {
@@ -139,7 +151,7 @@ func (s *StubAudioSource) runFile(ctx context.Context, out chan<- []float32, chu
 		select {
 		case <-ctx.Done():
 			return
-		case <-s.stopCh:
+		case <-stopCh:
 			return
 		default:
 		}
@@ -161,7 +173,7 @@ func (s *StubAudioSource) runFile(ctx context.Context, out chan<- []float32, chu
 		case out <- append([]float32(nil), chunk...):
 		case <-ctx.Done():
 			return
-		case <-s.stopCh:
+		case <-stopCh:
 			return
 		}
 
@@ -172,9 +184,9 @@ func (s *StubAudioSource) runFile(ctx context.Context, out chan<- []float32, chu
 }
 
 // runSilence emits zero-valued chunks until stopped.
-func (s *StubAudioSource) runSilence(ctx context.Context, out chan<- []float32, chunkSize int) {
+func (s *StubAudioSource) runSilence(ctx context.Context, out chan<- []float32, chunkSize int, stopCh, doneCh chan struct{}) {
 	defer close(out)
-	defer close(s.doneCh)
+	defer close(doneCh)
 
 	silence := make([]float32, chunkSize) // zero-valued by Go initialisation
 
@@ -182,7 +194,7 @@ func (s *StubAudioSource) runSilence(ctx context.Context, out chan<- []float32, 
 		select {
 		case <-ctx.Done():
 			return
-		case <-s.stopCh:
+		case <-stopCh:
 			return
 		case out <- append([]float32(nil), silence...):
 			// chunk sent; continue
@@ -190,19 +202,25 @@ func (s *StubAudioSource) runSilence(ctx context.Context, out chan<- []float32, 
 	}
 }
 
-// Stop implements AudioSource.
+// Stop implements AudioSource. Safe to call from any goroutine and
+// concurrent with Start — mu guards the channel fields.
 func (s *StubAudioSource) Stop() error {
-	if s.stopCh == nil {
+	s.mu.Lock()
+	stopCh := s.stopCh
+	doneCh := s.doneCh
+	s.mu.Unlock()
+
+	if stopCh == nil {
 		return nil // Start was never called
 	}
 	select {
-	case <-s.stopCh:
+	case <-stopCh:
 		// already stopped
 	default:
-		close(s.stopCh)
+		close(stopCh)
 	}
-	if s.doneCh != nil {
-		<-s.doneCh // wait for goroutine to exit
+	if doneCh != nil {
+		<-doneCh // wait for goroutine to exit
 	}
 	return nil
 }

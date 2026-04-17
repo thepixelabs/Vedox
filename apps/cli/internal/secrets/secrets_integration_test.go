@@ -35,6 +35,7 @@ import (
 // This is the primary AgeStore integration test: a more complete cycle than
 // the single-key RoundTrip unit test.
 func TestAgeStore_ThreeKeyLifecycle_PutGetListDeleteOne(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 	t.Setenv("VEDOX_AGE_PASSPHRASE", "three-key-integration-passphrase")
 
@@ -132,6 +133,7 @@ func TestAgeStore_ThreeKeyLifecycle_PutGetListDeleteOne(t *testing.T) {
 // If the file path is not selected, Open will fail with a wrong-passphrase
 // decryption error — making the priority bug observable as a test failure.
 func TestAgeStore_PassphraseFilePriority_OverBareEnvVar(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 	correctPassphrase := "the-correct-passphrase-in-the-file"
 	wrongPassphrase := "wrong-passphrase-in-bare-env-var"
@@ -216,6 +218,7 @@ func TestAgeStore_PassphraseFile_MissingFileRejected(t *testing.T) {
 // modern hardware). Three goroutines × one Put each is the minimum workload
 // that exercises the mutex/write-through cache path without timing out.
 func TestAgeStore_ConcurrentPuts_NoDataloss(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 	t.Setenv("VEDOX_AGE_PASSPHRASE", "concurrent-put-passphrase")
 
@@ -267,6 +270,7 @@ func TestAgeStore_ConcurrentPuts_NoDataloss(t *testing.T) {
 // readers race to Get a key that was seeded before the goroutines start. This
 // proves the mutex prevents readers from observing a partially-written cache.
 func TestAgeStore_ConcurrentGetDuringPut(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 	t.Setenv("VEDOX_AGE_PASSPHRASE", "concurrent-get-passphrase")
 

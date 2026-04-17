@@ -709,6 +709,54 @@ MIIEowIBAAKCAQEA2a2rwplBQLzHPZe5MG...
 	}
 }
 
+// ── GatePreCommit — file size cap regression ────────────────────────────────
+
+// TestGatePreCommit_OversizeFileBlocked regresses an unbounded-read OOM
+// vector: before the fix, GatePreCommit called os.ReadFile with no size
+// limit, so a malicious or accidental multi-GB file on the commit path
+// would exhaust daemon memory. The gate now caps reads and blocks with a
+// synthetic OVERSIZE-FILE finding when the cap is exceeded.
+//
+// We use a file one byte over the exported cap via a hole-sparse write so
+// the test runs fast and uses very little disk.
+func TestGatePreCommit_OversizeFileBlocked(t *testing.T) {
+	const oversizeBytes = 16*1024*1024 + 1 // exceed the 16 MiB cap by one byte.
+	dir := t.TempDir()
+	f := filepath.Join(dir, "huge.md")
+	fh, err := os.Create(f)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Sparse file: seek then write a single byte. The logical size is
+	// oversizeBytes but the physical allocation is minimal.
+	if _, err := fh.Seek(int64(oversizeBytes-1), 0); err != nil {
+		fh.Close()
+		t.Fatalf("seek: %v", err)
+	}
+	if _, err := fh.Write([]byte{0}); err != nil {
+		fh.Close()
+		t.Fatalf("write: %v", err)
+	}
+	fh.Close()
+
+	findings, err := secretscan.GatePreCommit([]string{f})
+	if err == nil {
+		t.Fatal("expected GatePreCommit to block oversize file, got nil error")
+	}
+	oversizeFound := false
+	for _, fn := range findings {
+		if fn.RuleID == "OVERSIZE-FILE" {
+			oversizeFound = true
+			if fn.Severity != secretscan.SeverityHigh {
+				t.Errorf("OVERSIZE-FILE severity: got %v, want High", fn.Severity)
+			}
+		}
+	}
+	if !oversizeFound {
+		t.Errorf("expected OVERSIZE-FILE finding, got findings: %v", findings)
+	}
+}
+
 // ── Corpus files ──────────────────────────────────────────────────────────────
 
 // TestCorpusMustBlock loads all files from testdata/corpus/must-block/ and

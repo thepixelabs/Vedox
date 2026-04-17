@@ -1,11 +1,47 @@
 package secretscan
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// errFileTooLarge is a sentinel returned by readCappedFile when the file on
+// disk exceeds the scan size cap.
+var errFileTooLarge = errors.New("secretscan: file exceeds scan size cap")
+
+// readCappedFile reads at most cap+1 bytes from path. If the file exceeds
+// cap bytes, errFileTooLarge is returned. Any other I/O error is wrapped
+// and returned.
+func readCappedFile(path string, cap int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	// Read cap+1 so we can distinguish "exactly cap bytes" from "too big".
+	b, err := io.ReadAll(io.LimitReader(f, cap+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > cap {
+		return nil, errFileTooLarge
+	}
+	return b, nil
+}
+
+// maxScanFileBytes caps how much of a single file GatePreCommit will buffer
+// into memory for scanning. Files exceeding this are treated as a blocking
+// finding rather than being either silently skipped or OOM-loaded, since a
+// multi-gigabyte file in a documentation commit is almost certainly either
+// a mistake (a binary checked in) or an attack (an attempt to exhaust the
+// agent host). 16 MiB is generous for real documentation — the largest
+// markdown file in practice is <1 MiB — while keeping the gate responsive
+// and memory-bounded.
+const maxScanFileBytes = 16 * 1024 * 1024
 
 // GatePreCommit is the API the Vedox Doc Agent calls before executing a
 // git commit. It scans each file listed in paths and returns findings that
@@ -69,8 +105,26 @@ func gatePreCommitWithScanner(s Scanner, paths []string) ([]Finding, error) {
 			continue
 		}
 
-		body, err := os.ReadFile(path)
+		body, err := readCappedFile(path, maxScanFileBytes)
 		if err != nil {
+			if errors.Is(err, errFileTooLarge) {
+				// Oversize file — block the commit rather than risk an OOM on
+				// a malicious or accidental multi-GB input. Surfaced as a
+				// synthetic finding so the caller sees it in the same list as
+				// content-based findings.
+				blockReasons = append(blockReasons, fmt.Sprintf("oversize file: %s (>%d bytes)", filepath.Base(path), maxScanFileBytes))
+				allFindings = append(allFindings, Finding{
+					RuleID:     "OVERSIZE-FILE",
+					RuleName:   "File exceeds scan size limit",
+					FilePath:   path,
+					Line:       0,
+					Column:     0,
+					Match:      fmt.Sprintf("%d-byte cap", maxScanFileBytes),
+					Severity:   SeverityHigh,
+					Confidence: ConfidenceHigh,
+				})
+				continue
+			}
 			// Non-existent or unreadable files are not secret findings; return the
 			// read error so the caller can decide how to handle missing files.
 			return allFindings, fmt.Errorf("secretscan: read %s: %w", path, err)

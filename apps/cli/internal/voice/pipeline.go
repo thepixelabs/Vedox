@@ -114,8 +114,11 @@ type PipelineConfig struct {
 // goroutine and the processing loop goroutine.  Create one with NewPipeline
 // and call Start to begin.
 //
-// Pipeline is not safe for concurrent use from multiple goroutines.
-// OnActivity and SetPTT may be called from any goroutine after Start returns.
+// Pipeline is safe for concurrent calls to SetPTT, OnActivity, Start and
+// Stop.  The lifecycle fields (cancel, activityCb) are protected by
+// lifecycleMu; the loop goroutine reads activityCb via the notify() helper
+// which takes the same lock, so a late OnActivity never races with a state
+// transition already in flight.
 type Pipeline struct {
 	cfg PipelineConfig
 
@@ -123,16 +126,20 @@ type Pipeline struct {
 	pttMu     sync.Mutex
 	pttActive bool
 
-	// activity callback — written once by OnActivity before Start; read
-	// from the loop goroutine.  No mutex needed if OnActivity is called
-	// before Start.
-	activityCb func(VoiceState)
+	// lifecycleMu protects the mutable lifecycle fields (activityCb, cancel,
+	// started). OnActivity may now be called from any goroutine at any time
+	// without racing the loop goroutine's notify() reads.
+	lifecycleMu sync.Mutex
+	activityCb  func(VoiceState)
+	cancel      context.CancelFunc
+	started     bool
 
 	// pttCh carries PTT transitions into the loop goroutine.
 	pttCh chan bool
 
-	// cancel stops the pipeline loop and audio source.
-	cancel context.CancelFunc
+	// doneCh is closed by the loop goroutine when it exits. Allocated once
+	// in NewPipeline; never reassigned afterwards, so concurrent reads are
+	// safe.
 	doneCh chan struct{}
 }
 
@@ -164,10 +171,12 @@ func NewPipeline(cfg PipelineConfig) (*Pipeline, error) {
 
 // OnActivity registers a callback that is invoked every time the pipeline
 // transitions to a new VoiceState.  The callback is called from the pipeline's
-// internal goroutine; it must not block.  OnActivity must be called before
-// Start.
+// internal goroutine; it must not block. Safe to call before or after Start
+// from any goroutine.
 func (p *Pipeline) OnActivity(cb func(VoiceState)) {
+	p.lifecycleMu.Lock()
 	p.activityCb = cb
+	p.lifecycleMu.Unlock()
 }
 
 // SetPTT activates or deactivates push-to-talk.  May be called from any
@@ -195,11 +204,21 @@ func (p *Pipeline) SetPTT(active bool) {
 // OnActivity callback (VoiceStateError).
 func (p *Pipeline) Start(ctx context.Context) error {
 	loopCtx, cancel := context.WithCancel(ctx)
+
+	p.lifecycleMu.Lock()
 	p.cancel = cancel
+	p.started = true
+	p.lifecycleMu.Unlock()
 
 	audioCh, err := p.cfg.Source.Start(loopCtx)
 	if err != nil {
 		cancel()
+		// Revert lifecycle state so a subsequent Stop does not wait on a
+		// doneCh that no loop goroutine will ever close.
+		p.lifecycleMu.Lock()
+		p.cancel = nil
+		p.started = false
+		p.lifecycleMu.Unlock()
 		return fmt.Errorf("pipeline: start audio source: %w", err)
 	}
 
@@ -209,22 +228,35 @@ func (p *Pipeline) Start(ctx context.Context) error {
 
 // Stop halts the pipeline.  It cancels the context, stops the audio source,
 // and waits for the loop goroutine to exit.  Stop is safe to call multiple
-// times.
+// times and from any goroutine.
 func (p *Pipeline) Stop() error {
-	if p.cancel != nil {
-		p.cancel()
+	p.lifecycleMu.Lock()
+	cancel := p.cancel
+	p.cancel = nil
+	started := p.started
+	p.lifecycleMu.Unlock()
+
+	if cancel != nil {
+		cancel()
 	}
 	if err := p.cfg.Source.Stop(); err != nil {
 		return fmt.Errorf("pipeline: stop audio source: %w", err)
 	}
-	<-p.doneCh
+	if started {
+		<-p.doneCh
+	}
 	return nil
 }
 
-// notify calls the activity callback if one has been registered.
+// notify calls the activity callback if one has been registered. The snapshot
+// load is taken under lifecycleMu so a concurrent OnActivity cannot race with
+// the loop goroutine.
 func (p *Pipeline) notify(state VoiceState) {
-	if p.activityCb != nil {
-		p.activityCb(state)
+	p.lifecycleMu.Lock()
+	cb := p.activityCb
+	p.lifecycleMu.Unlock()
+	if cb != nil {
+		cb(state)
 	}
 }
 

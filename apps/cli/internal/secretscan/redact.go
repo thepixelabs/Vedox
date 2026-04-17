@@ -41,7 +41,7 @@ func Redact(match string) string {
 // than n runes, the full string is returned.
 func firstNRunes(s string, n int) string {
 	count := 0
-	for i, _ := range s {
+	for i := range s {
 		if count == n {
 			return s[:i]
 		}

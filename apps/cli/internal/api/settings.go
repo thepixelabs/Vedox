@@ -101,11 +101,46 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject oversized bodies before any allocation. 256 KB is generous for a
+	// user-preferences JSON blob (typical size is <2 KB). This prevents a
+	// DoS-via-huge-payload that would otherwise fill daemon memory with the
+	// map[string]json.RawMessage and the merged re-marshal buffer.
+	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+
 	// Decode incoming body into a generic map so we preserve unknown future keys.
+	// DisallowUnknownFields is deliberately NOT set — the schema is intentionally
+	// open for forward-compatible preferences. Instead we bound depth by virtue
+	// of storing values as json.RawMessage (no recursive decode).
 	var incoming map[string]json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&incoming); err != nil {
 		writeError(w, http.StatusBadRequest, "VDX-400", "invalid JSON body")
 		return
+	}
+	// Reject trailing JSON (smuggling a second document).
+	if dec.More() {
+		writeError(w, http.StatusBadRequest, "VDX-400", "request body must be a single JSON object")
+		return
+	}
+	// Validate each top-level value is well-formed JSON. json.RawMessage skips
+	// validation; we re-parse each value and cap nesting depth to prevent a
+	// "JSON bomb" (deeply nested arrays/objects) from exhausting stack memory
+	// when the frontend later consumes the stored file.
+	const maxDepth = 32
+	for k, v := range incoming {
+		if !utf8ValidString(k) {
+			writeError(w, http.StatusBadRequest, "VDX-400", "settings key must be valid UTF-8")
+			return
+		}
+		if len(k) > 256 {
+			writeError(w, http.StatusBadRequest, "VDX-400", "settings key too long")
+			return
+		}
+		if err := validateJSONDepth(v, maxDepth); err != nil {
+			writeError(w, http.StatusBadRequest, "VDX-400",
+				"settings value rejected: "+err.Error())
+			return
+		}
 	}
 
 	// Load existing prefs (may not exist yet).

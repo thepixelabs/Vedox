@@ -366,6 +366,41 @@ func TestIsListMarker(t *testing.T) {
 	}
 }
 
+// ── regression tests for Summarize bucketing ─────────────────────────────────
+
+// TestSummarize_BucketsByKindAndSection_NotByContent is a regression test for
+// a bug where the bucket key used NewContent as the lang field, so two
+// different "Added paragraph under 'Setup'" changes counted as separate
+// buckets and the summary read "added paragraph under 'Setup', added
+// paragraph under 'Setup'" instead of "added 2 paragraphs under 'Setup'".
+func TestSummarize_BucketsByKindAndSection_NotByContent(t *testing.T) {
+	changes := []Change{
+		{Type: ChangeAdded, Kind: BlockParagraph, Section: "Setup", NewContent: "first paragraph", Summary: "Added paragraph under 'Setup'"},
+		{Type: ChangeAdded, Kind: BlockParagraph, Section: "Setup", NewContent: "second paragraph", Summary: "Added paragraph under 'Setup'"},
+	}
+	s := Summarize(changes)
+	// Must pluralise to "2 paragraphs" — not emit two separate sentences.
+	if !strings.Contains(s, "2 paragraph") {
+		t.Errorf("expected pluralised '2 paragraphs' in summary, got %q", s)
+	}
+	if strings.Count(s, "added paragraph") > 0 {
+		t.Errorf("expected single bucket, got two separate 'added paragraph' phrases: %q", s)
+	}
+}
+
+// TestSummarize_CodeFenceLangGroups verifies that two code-fence adds in the
+// same language bucket together and report the language in the plural form.
+func TestSummarize_CodeFenceLangGroups(t *testing.T) {
+	changes := []Change{
+		{Type: ChangeAdded, Kind: BlockCodeFence, Section: "API", NewContent: "```go\nfoo\n```"},
+		{Type: ChangeAdded, Kind: BlockCodeFence, Section: "API", NewContent: "```go\nbar\n```"},
+	}
+	s := Summarize(changes)
+	if !strings.Contains(s, "2 go code blocks") {
+		t.Errorf("expected '2 go code blocks' in summary, got %q", s)
+	}
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func filterByType(changes []Change, ct ChangeType) []Change {

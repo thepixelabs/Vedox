@@ -502,6 +502,48 @@ func TestClaude_Repair_ReinstallsOnDrift(t *testing.T) {
 	}
 }
 
+// TestClaude_Probe_SchemaHashIsDeterministic is a regression test for a bug
+// where schemaHashFromAgentFile iterated over a Go map without sorting keys
+// first, producing a different hash on every Probe() call because Go map
+// iteration order is randomised. Verify would then report spurious drift
+// even when the file on disk was byte-identical.
+func TestClaude_Probe_SchemaHashIsDeterministic(t *testing.T) {
+	home := t.TempDir()
+	installer, _, _ := newTestInstaller(t, home)
+
+	// Write a realistic agent file with several frontmatter keys so that
+	// random iteration order has a chance to produce different hashes.
+	agentsDir := filepath.Join(home, ".claude", "agents")
+	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	agentFile := filepath.Join(agentsDir, "vedox-doc.md")
+	content := "---\nname: vedox-doc-agent\ndescription: test\nversion: \"2.0\"\nprovider: claude\nextra_a: 1\nextra_b: 2\nextra_c: 3\n---\nbody\n"
+	if err := os.WriteFile(agentFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Call Probe repeatedly; the schema hash must not change between calls.
+	var firstHash string
+	for i := 0; i < 20; i++ {
+		result, err := installer.Probe(context.Background())
+		if err != nil {
+			t.Fatalf("Probe[%d]: %v", i, err)
+		}
+		if i == 0 {
+			firstHash = result.SchemaHash
+			if firstHash == "" {
+				t.Fatal("Probe: first schema hash is empty")
+			}
+			continue
+		}
+		if result.SchemaHash != firstHash {
+			t.Fatalf("Probe[%d]: schema hash non-deterministic: got %q, want %q",
+				i, result.SchemaHash, firstHash)
+		}
+	}
+}
+
 func TestClaude_Repair_NoOpWhenHealthy(t *testing.T) {
 	home := t.TempDir()
 	installer, store, mock := newTestInstaller(t, home)

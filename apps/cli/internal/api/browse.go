@@ -73,9 +73,25 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	// (e.g. a compromised frontend) cannot enumerate /etc, /proc, or other
 	// sensitive directories. withinHomeDir uses filepath.Clean on both paths
 	// to defeat double-dot traversal before the HasPrefix comparison.
+	//
+	// Symlink-escape guard (re-audit #2): filepath.Abs does NOT resolve
+	// symlinks, so a user-owned symlink inside $HOME that points outside it
+	// (e.g. ~/escape -> /etc) would pass the prefix check but os.ReadDir
+	// would then follow the symlink and enumerate the target. We resolve
+	// the real path here and re-check the boundary before touching the
+	// filesystem. EvalSymlinks fails when the path does not exist; in that
+	// case we fall back to the abs comparison (which is still safe because
+	// a non-existent path cannot contain a symlink).
 	if !withinHomeDir(abs) {
 		writeError(w, http.StatusForbidden, "VDX-403", "path is outside the allowed home directory boundary")
 		return
+	}
+	if real, serr := filepath.EvalSymlinks(abs); serr == nil {
+		if !withinHomeDir(real) {
+			writeError(w, http.StatusForbidden, "VDX-403", "path is outside the allowed home directory boundary")
+			return
+		}
+		abs = real
 	}
 
 	entries, err := os.ReadDir(abs)

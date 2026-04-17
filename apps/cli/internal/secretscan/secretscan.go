@@ -275,14 +275,21 @@ func (s *scanner) Scan(path string, body []byte) []Finding {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		// Scanner error (shouldn't happen with 1MB buffer, but don't swallow it).
+		// Scanner error (shouldn't happen with 1 MiB line buffer but we never
+		// silently swallow it). The error message is redacted because
+		// bufio.Scanner's error can include a preview of the overflowing
+		// token — which, for a file containing a secret on a very long line,
+		// could leak the secret value into the finding. Fail closed with a
+		// blocking severity and confidence so the caller does not treat the
+		// file as clean.
 		findings = append(findings, Finding{
-			RuleID:   "SCANNER-ERROR",
-			RuleName: "Scanner read error",
-			FilePath: path,
-			Line:     lineNum,
-			Match:    err.Error(),
-			Severity: SeverityHigh,
+			RuleID:     "SCANNER-ERROR",
+			RuleName:   "Scanner read error",
+			FilePath:   path,
+			Line:       lineNum,
+			Match:      Redact(err.Error()),
+			Severity:   SeverityHigh,
+			Confidence: ConfidenceHigh,
 		})
 	}
 	return findings

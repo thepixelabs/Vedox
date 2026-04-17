@@ -422,24 +422,18 @@ func TestPipelineStopWithoutStart(t *testing.T) {
 		t.Fatalf("NewPipeline: %v", err)
 	}
 
-	// Stop must not panic even though Start was never called.
-	// doneCh won't be closed in this case, so Stop will block on <-p.doneCh.
-	// We call the Stop directly and timeout.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		// No-op — Stop's behaviour before Start is limited to cancelling
-		// the source and returning; doneCh will not be closed.
-		if p.cancel != nil {
-			p.cancel()
-		}
-		p.cfg.Source.Stop() //nolint:errcheck
-	}()
+	// Stop before Start must not panic or hang. The started flag gates the
+	// <-p.doneCh wait so this returns promptly.
+	done := make(chan error, 1)
+	go func() { done <- p.Stop() }()
 
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Stop before Start returned error: %v", err)
+		}
 	case <-time.After(time.Second):
-		t.Error("cleanup goroutine hung — possible deadlock")
+		t.Fatal("Stop before Start hung — possible deadlock")
 	}
 }
 

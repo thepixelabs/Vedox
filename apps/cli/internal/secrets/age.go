@@ -196,11 +196,14 @@ func (s *AgeStore) writeLocked() error {
 		_ = tmp.Close()
 		return fmt.Errorf("fsync temp file: %w", err)
 	}
+	// fchmod via the open descriptor before Close closes the TOCTOU window
+	// that a path-based os.Chmod(tmpName, ...) would leave open.
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp file: %w", err)
-	}
-	if err := os.Chmod(tmpName, 0o600); err != nil {
-		return fmt.Errorf("chmod temp file: %w", err)
 	}
 	if err := os.Rename(tmpName, finalPath); err != nil {
 		return fmt.Errorf("rename temp file: %w", err)
@@ -209,16 +212,53 @@ func (s *AgeStore) writeLocked() error {
 	return nil
 }
 
+// Close best-effort zeroes the in-memory passphrase so it is not present in a
+// core dump or page-swap after the store is no longer needed. Cached secret
+// values are stored as Go strings, which are immutable and not zeroable —
+// that is an acknowledged limitation of holding secrets in a map[string]string.
+// Callers should prefer a short-lived AgeStore where possible.
+//
+// Close is idempotent.
+func (s *AgeStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.passphrase {
+		s.passphrase[i] = 0
+	}
+	s.passphrase = nil
+	s.loaded = false
+	return nil
+}
+
+// scryptWorkFactor is the log2 N parameter passed to age's scrypt recipient.
+// A value of 0 means "use the age default" (currently 18, ~0.3 s on modern
+// hardware). Tests may lower this via testLowerScryptWorkFactor to keep the
+// unit test suite under a few seconds — production callers never touch it.
+//
+// The guard in encryptAge defends against a stray call lowering this in a
+// non-test binary: we refuse to encrypt with a factor below minWorkFactor.
+var scryptWorkFactor int // 0 = age default
+
+// minWorkFactor is the floor enforced by encryptAge when scryptWorkFactor is
+// explicitly set. 10 is low enough for tests (<1 s) and high enough to hide
+// accidental production use of the test hook.
+const minWorkFactor = 10
+
 // encryptAge encrypts plaintext using an age scrypt (passphrase) recipient.
-// The default work factor (2^18) is used — ~0.3s on modern hardware. Do not
-// lower this value; the scrypt cost is the primary defence against offline
-// brute-force on the exfiltrated secrets.age file.
+// The default work factor (2^18) is used — ~0.3 s on modern hardware. Do not
+// lower this value in production; the scrypt cost is the primary defence
+// against offline brute-force on the exfiltrated secrets.age file.
 func encryptAge(plaintext, passphrase []byte) ([]byte, error) {
 	recipient, err := age.NewScryptRecipient(string(passphrase))
 	if err != nil {
 		return nil, fmt.Errorf("age recipient: %w", err)
 	}
-	// Default work factor (18) is used; we do not lower it.
+	if scryptWorkFactor != 0 {
+		if scryptWorkFactor < minWorkFactor {
+			return nil, fmt.Errorf("age: refusing work factor %d below minimum %d", scryptWorkFactor, minWorkFactor)
+		}
+		recipient.SetWorkFactor(scryptWorkFactor)
+	}
 
 	var buf bytes.Buffer
 	w, err := age.Encrypt(&buf, recipient)

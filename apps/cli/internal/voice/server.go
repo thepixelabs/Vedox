@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,7 +37,23 @@ type VoiceServer struct {
 	state          VoiceState
 	lastTranscript string
 	lastCommand    string
+
+	// pttRateLimiter enforces a coarse rate limit on PTT activation requests
+	// so a malicious local process (e.g. a compromised npm dep) cannot
+	// spam-activate the microphone in a tight loop. We allow at most
+	// pttRateLimit toggles per pttRateWindow.
+	pttBucket atomic.Int64 // time-window start (unix nanos)
+	pttCount  atomic.Int32 // requests in the current window
 }
+
+// pttRateLimit is the maximum number of POST /api/voice/ptt requests allowed
+// within pttRateWindow. PTT is a user action — 10 toggles per second is
+// already absurdly high for a human driver; any higher rate is almost
+// certainly programmatic abuse.
+const (
+	pttRateLimit  = 10
+	pttRateWindow = time.Second
+)
 
 // NewVoiceServer constructs a VoiceServer wrapping the given Pipeline.
 // The Pipeline must not be nil.  Call this before Pipeline.Start so that
@@ -120,6 +138,19 @@ type pttRequest struct {
 // Response 204 No Content on success.
 // Response 400 if the body cannot be decoded.
 func (vs *VoiceServer) handlePTT(w http.ResponseWriter, r *http.Request) {
+	// Rate limit: prevent a malicious local process from spam-activating the
+	// microphone. Exceeding the limit returns 429 Too Many Requests.
+	if !vs.allowPTT() {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"VDX-429","message":"ptt rate limit exceeded"}`))
+		return
+	}
+
+	// Cap body size — the payload is a 1-field object, 1 KB is generous.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<10)
+
 	var req pttRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid JSON body"}`, http.StatusBadRequest)
@@ -128,6 +159,21 @@ func (vs *VoiceServer) handlePTT(w http.ResponseWriter, r *http.Request) {
 
 	vs.pipeline.SetPTT(req.Active)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// allowPTT implements a simple fixed-window rate limiter on PTT activations.
+// Returns true if the request is within the budget; false when the bucket
+// is exhausted for the current window.
+func (vs *VoiceServer) allowPTT() bool {
+	now := time.Now().UnixNano()
+	window := vs.pttBucket.Load()
+	if now-window > int64(pttRateWindow) {
+		// Roll the window. CompareAndSwap prevents two goroutines both resetting.
+		if vs.pttBucket.CompareAndSwap(window, now) {
+			vs.pttCount.Store(0)
+		}
+	}
+	return vs.pttCount.Add(1) <= pttRateLimit
 }
 
 // ---------------------------------------------------------------------------

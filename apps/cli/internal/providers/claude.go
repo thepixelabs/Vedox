@@ -22,9 +22,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -465,11 +467,15 @@ func schemaHashFromAgentFile(data []byte) string {
 	if err := yaml.Unmarshal([]byte(yamlBlock), &m); err != nil {
 		return sha256Hex(data)
 	}
-	// Hash the sorted key names only.
+	// Hash the sorted key names only. Sorting is load-bearing: Go maps have
+	// randomised iteration order, so without sort.Strings the hash would
+	// differ from one Probe() call to the next and Verify would report
+	// spurious schema drift.
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	h := sha256.New()
 	for _, k := range keys {
 		h.Write([]byte(k))
@@ -527,9 +533,14 @@ func removeFencedBlock(data []byte) []byte {
 }
 
 // claudeBinaryVersion runs `claude --version` and returns the first line of
-// output (trimmed). Returns an empty string on any error.
+// output (trimmed). Returns an empty string on any error or on timeout.
+//
+// A 5-second upper bound protects Probe() from hanging if `claude --version`
+// is ever reimplemented as a slow network call.
 func claudeBinaryVersion(binPath string) string {
-	out, err := exec.Command(binPath, "--version").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, binPath, "--version").Output()
 	if err != nil {
 		return ""
 	}
@@ -541,13 +552,19 @@ func claudeBinaryVersion(binPath string) string {
 }
 
 // daemonPort extracts the numeric port from a URL like "http://127.0.0.1:5150".
-// Falls back to "5150" on any parse failure.
-func daemonPort(url string) string {
-	parts := strings.SplitN(url, ":", 3)
-	if len(parts) == 3 {
-		return parts[2]
+// Falls back to "5150" on any parse failure. Uses net/url for a correct parse
+// instead of the brittle SplitN on ":", which fails for forms like
+// "http://example.com/" (no port), or IPv6 literals.
+func daemonPort(rawURL string) string {
+	const defaultPort = "5150"
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return defaultPort
 	}
-	return "5150"
+	if p := u.Port(); p != "" {
+		return p
+	}
+	return defaultPort
 }
 
 // defaultInstructionBody returns the instruction body loaded from the

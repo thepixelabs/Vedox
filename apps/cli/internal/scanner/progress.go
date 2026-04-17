@@ -129,20 +129,57 @@ func (js *JobStore) runScan(job *ScanJob) {
 }
 
 // Get returns the ScanJob for id. Returns nil if not found.
-// The returned pointer is safe to read under the store's lock; callers that
-// need a stable snapshot should copy the value.
+//
+// WARNING: the returned pointer aliases the same *ScanJob that the scan
+// goroutine mutates under js.mu. Reading fields from the returned pointer
+// without holding js.mu races with runScan's status transitions, which is a
+// data race under -race.  Callers MUST use Snapshot instead when they need
+// to read job fields outside the store's lock (e.g. HTTP handlers encoding
+// JSON).  Get is retained for callers that only need identity comparison.
 func (js *JobStore) Get(id string) *ScanJob {
 	js.mu.RLock()
 	defer js.mu.RUnlock()
 	return js.jobs[id]
 }
 
+// Snapshot returns a value copy of the job identified by id. The copy is
+// taken under js.mu so field reads cannot race with runScan's concurrent
+// mutations.  Returns (ScanJob{}, false) if the id is not found.
+//
+// This is the safe accessor for HTTP handlers and any other caller that
+// reads the job fields (Status, Projects, Total, Scanned, Error,
+// CompletedAt) from a goroutine other than runScan itself.
+func (js *JobStore) Snapshot(id string) (ScanJob, bool) {
+	js.mu.RLock()
+	defer js.mu.RUnlock()
+	p, ok := js.jobs[id]
+	if !ok {
+		return ScanJob{}, false
+	}
+	return *p, true
+}
+
 // LastCompleted returns the most recent completed ScanJob for workspaceRoot,
 // or nil if no scan has completed for that root in this process lifetime.
+//
+// WARNING: same aliasing caveat as Get. Prefer LastCompletedSnapshot.
 func (js *JobStore) LastCompleted(workspaceRoot string) *ScanJob {
 	js.mu.RLock()
 	defer js.mu.RUnlock()
 	return js.lastDone[workspaceRoot]
+}
+
+// LastCompletedSnapshot returns a value copy of the most recent completed
+// ScanJob for workspaceRoot. Returns (ScanJob{}, false) if no scan has
+// completed. Safe to call concurrently with ongoing scans.
+func (js *JobStore) LastCompletedSnapshot(workspaceRoot string) (ScanJob, bool) {
+	js.mu.RLock()
+	defer js.mu.RUnlock()
+	p, ok := js.lastDone[workspaceRoot]
+	if !ok {
+		return ScanJob{}, false
+	}
+	return *p, true
 }
 
 // Scanner returns the underlying Scanner so callers (e.g. HTTP handlers that

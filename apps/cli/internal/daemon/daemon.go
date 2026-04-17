@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -112,26 +113,15 @@ func GenerateBootstrapToken() (string, error) {
 }
 
 // WriteTokenFile writes token to tokenFile atomically (temp file then rename)
-// at mode 0o600. Any existing token file is replaced.
+// at mode 0o600. Any existing token file is replaced. The temp file is
+// fsync'd before the rename so a power-loss crash cannot leave the final
+// path referencing an empty or partially-written inode.
 func WriteTokenFile(tokenFile, token string) error {
 	dir := filepath.Dir(tokenFile)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cannot create token dir: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, ".daemon-token-*")
-	if err != nil {
-		return fmt.Errorf("cannot create temp token file: %w", err)
-	}
-	tmp.Close()
-	if err := os.WriteFile(tmp.Name(), []byte(token+"\n"), 0o600); err != nil {
-		os.Remove(tmp.Name())
-		return fmt.Errorf("cannot write token: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), tokenFile); err != nil {
-		os.Remove(tmp.Name())
-		return fmt.Errorf("cannot install token file: %w", err)
-	}
-	return nil
+	return writeAtomic0600(dir, tokenFile, ".daemon-token-*", []byte(token+"\n"))
 }
 
 // ReadTokenFile reads the token from tokenFile. Returns an error if the file
@@ -154,26 +144,15 @@ type PIDRecord struct {
 }
 
 // WritePIDFile writes the PID record atomically (temp→rename) at mode 0o600.
+// The temp file is fsync'd before the rename so a crash between write and
+// rename cannot leave the PID file referencing an empty inode.
 func WritePIDFile(pidFile string, rec PIDRecord) error {
 	dir := filepath.Dir(pidFile)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cannot create PID dir: %w", err)
 	}
 	line := fmt.Sprintf("%d %d %d %s\n", rec.PID, rec.Port, rec.StartUnixNS, rec.Version)
-	tmp, err := os.CreateTemp(dir, ".vedoxd.pid-*")
-	if err != nil {
-		return fmt.Errorf("cannot create temp PID file: %w", err)
-	}
-	tmp.Close()
-	if err := os.WriteFile(tmp.Name(), []byte(line), 0o600); err != nil {
-		os.Remove(tmp.Name())
-		return fmt.Errorf("cannot write PID: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), pidFile); err != nil {
-		os.Remove(tmp.Name())
-		return fmt.Errorf("cannot install PID file: %w", err)
-	}
-	return nil
+	return writeAtomic0600(dir, pidFile, ".vedoxd.pid-*", []byte(line))
 }
 
 // ReadPIDFile reads the PID record from pidFile.
@@ -222,25 +201,56 @@ func IsAlive(pid int) bool {
 }
 
 // WritePortSidecar writes the port number to the port sidecar file at mode
-// 0o600 using an atomic temp→rename pattern.
+// 0o600 using an atomic temp→rename pattern with fsync for durability.
 func WritePortSidecar(portFile string, port int) error {
 	dir := filepath.Dir(portFile)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cannot create run dir: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, ".port-*")
+	return writeAtomic0600(dir, portFile, ".port-*", []byte(strconv.Itoa(port)+"\n"))
+}
+
+// writeAtomic0600 writes data to dst using a temp file in dir, fsync'ing
+// the file before rename so a crash between write and rename cannot leave
+// the destination path referencing an empty or partially-written inode.
+// The final file mode is 0o600.
+//
+// If any step fails, the temp file is removed and a wrapped error is
+// returned — the destination path is left untouched so callers can retry
+// safely without losing the previous contents.
+func writeAtomic0600(dir, dst, pattern string, data []byte) error {
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
-		return fmt.Errorf("cannot create temp port file: %w", err)
+		return fmt.Errorf("cannot create temp file in %s: %w", dir, err)
 	}
-	tmp.Close()
-	if err := os.WriteFile(tmp.Name(), []byte(strconv.Itoa(port)+"\n"), 0o600); err != nil {
-		os.Remove(tmp.Name())
-		return fmt.Errorf("cannot write port: %w", err)
+	tmpName := tmp.Name()
+
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), portFile); err != nil {
-		os.Remove(tmp.Name())
-		return fmt.Errorf("cannot install port sidecar: %w", err)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp file: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("fsync temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		return fmt.Errorf("rename temp to %s: %w", dst, err)
+	}
+	cleanup = false
 	return nil
 }
 
@@ -259,42 +269,56 @@ func CleanupRunFiles(p Paths) {
 // The lock is held for the entire daemon lifetime.
 type Lock struct {
 	path string
+
+	mu   sync.Mutex // guards file so Release is safe under concurrent callers
 	file *os.File
 }
 
 // AcquireLock opens lockPath for writing and acquires an exclusive,
 // non-blocking flock(2). Returns ErrAlreadyRunning if another process holds
 // the lock. The caller must call Release() on clean shutdown.
+//
+// The lock file is truncated before writing the new holder's PID so a
+// longer previous PID cannot leave stale trailing bytes behind.
 func AcquireLock(lockPath string) (*Lock, error) {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
 		return nil, fmt.Errorf("cannot create lock dir: %w", err)
 	}
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open lock file: %w", err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
+		_ = f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
 			return nil, ErrAlreadyRunning
 		}
 		return nil, fmt.Errorf("flock failed: %w", err)
 	}
 	// Write the current PID into the lock file for human inspection.
-	fmt.Fprintf(f, "%d\n", os.Getpid())
+	// A write failure here is non-fatal — the lock is held even if the
+	// PID annotation cannot be recorded — but we surface it at warn level
+	// so operators can diagnose a misconfigured filesystem.
+	if _, werr := fmt.Fprintf(f, "%d\n", os.Getpid()); werr != nil {
+		slog.Warn("daemon: could not annotate lock file with PID", "path", lockPath, "error", werr)
+	}
 	return &Lock{path: lockPath, file: f}, nil
 }
 
 // ErrAlreadyRunning is returned when the advisory lock is held by another process.
 var ErrAlreadyRunning = errors.New("another vedox daemon is already running")
 
-// Release releases the advisory lock and closes the file. Idempotent.
+// Release releases the advisory lock and closes the file. Idempotent and
+// safe to call concurrently from multiple goroutines.
 func (l *Lock) Release() {
-	if l.file != nil {
-		syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN) //nolint:errcheck
-		l.file.Close()
-		l.file = nil
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return
 	}
+	_ = syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	_ = l.file.Close()
+	l.file = nil
 }
 
 // HealthzHandler builds the /healthz HTTP handler with an atomic uptime counter.
@@ -367,7 +391,12 @@ func Daemonize(binary string, args []string, logFile string) error {
 		return fmt.Errorf("cannot open daemon log %s: %w", logFile, err)
 	}
 
-	childArgs := append(args, "--foreground")
+	// Build the child argv without mutating the caller's slice. `append` can
+	// reuse args' backing array if there is spare capacity, which would
+	// surprise a caller that later inspects its own slice.
+	childArgs := make([]string, len(args), len(args)+1)
+	copy(childArgs, args)
+	childArgs = append(childArgs, "--foreground")
 	cmd := exec.Command(binary, childArgs...)
 	cmd.Stdout = f
 	cmd.Stderr = f

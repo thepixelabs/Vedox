@@ -49,13 +49,20 @@ type agentUninstallRequest struct {
 // agentReceiptResponse is the JSON shape returned after a successful install.
 // It mirrors providers.InstallReceipt but omits secret material. The HMAC
 // secret is NEVER included — only the key ID is returned.
+//
+// MED-05 re-audit fix: FileCount replaces the former FileHashes map. The map
+// exposed absolute home-directory paths in the HTTP response (e.g.
+// "/Users/alice/.claude/agents/vedox-doc.md"), which is unnecessary
+// information disclosure. The count is sufficient for the frontend to
+// confirm installation completeness; the full hashes remain in the
+// on-disk receipt at ~/.vedox/install-receipts/<provider>.json (0600).
 type agentReceiptResponse struct {
-	Provider    string            `json:"provider"`
-	Version     string            `json:"version"`
-	AuthKeyID   string            `json:"authKeyID"`
-	DaemonURL   string            `json:"daemonURL"`
-	FileHashes  map[string]string `json:"fileHashes"`
-	InstalledAt string            `json:"installedAt"`
+	Provider    string `json:"provider"`
+	Version     string `json:"version"`
+	AuthKeyID   string `json:"authKeyID"`
+	DaemonURL   string `json:"daemonURL"`
+	FileCount   int    `json:"fileCount"`
+	InstalledAt string `json:"installedAt"`
 }
 
 // agentListItem is one entry in the GET /api/agent/list response.
@@ -87,6 +94,10 @@ func (s *Server) handleAgentInstall(w http.ResponseWriter, r *http.Request) {
 			"key store not available; start the daemon to enable agent management")
 		return
 	}
+
+	// Install payload is just { provider: "..." }. Cap at 4 KB so we never
+	// buffer a multi-MB garbage body.
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 
 	var req agentInstallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -158,7 +169,7 @@ func (s *Server) handleAgentInstall(w http.ResponseWriter, r *http.Request) {
 		Version:     receipt.Version,
 		AuthKeyID:   receipt.AuthKeyID,
 		DaemonURL:   receipt.DaemonURL,
-		FileHashes:  receipt.FileHashes,
+		FileCount:   len(receipt.FileHashes),
 		InstalledAt: receipt.InstalledAt.Format("2006-01-02T15:04:05Z"),
 	})
 }
@@ -177,6 +188,8 @@ func (s *Server) handleAgentUninstall(w http.ResponseWriter, r *http.Request) {
 			"key store not available; start the daemon to enable agent management")
 		return
 	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 
 	var req agentUninstallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

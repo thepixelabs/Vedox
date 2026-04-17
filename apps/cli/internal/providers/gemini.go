@@ -547,9 +547,11 @@ func geminiSchemaHashFromManifest(data []byte) string {
 }
 
 // geminiBinaryVersion runs `gemini --version` and returns the first line of
-// output (trimmed). Returns an empty string on any error.
+// output (trimmed). Returns an empty string on any error or on timeout.
 func geminiBinaryVersion(binPath string) string {
-	out, err := exec.Command(binPath, "--version").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, binPath, "--version").Output()
 	if err != nil {
 		return ""
 	}

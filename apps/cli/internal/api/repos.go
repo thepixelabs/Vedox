@@ -97,6 +97,10 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 64 KB is ample for a repo registration payload; reject anything larger
+	// early so we don't buffer multi-MB JSON into memory before decoding.
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+
 	var req createRepoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "VDX-400", "invalid JSON body")
@@ -189,6 +193,8 @@ func (s *Server) handleCreateRepoWithInit(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+
 	var req createRepoWithInitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "VDX-400", "invalid JSON body")
@@ -222,6 +228,15 @@ func (s *Server) handleCreateRepoWithInit(w http.ResponseWriter, r *http.Request
 	if !withinHomeDir(absPath) {
 		writeError(w, http.StatusBadRequest, "VDX-400",
 			"path must be within your home directory")
+		return
+	}
+	// Re-audit: the parent directory may exist and contain a symlink that
+	// escapes $HOME. filepath.Abs does not resolve symlinks, so we EvalSymlinks
+	// the closest existing ancestor and re-check the boundary. This prevents
+	// `~/escape -> /tmp` being used as a scaffolding target.
+	if real := resolveExistingAncestor(absPath); real != "" && !withinHomeDir(real) {
+		writeError(w, http.StatusBadRequest, "VDX-400",
+			"path resolves outside your home directory via a symlink")
 		return
 	}
 
@@ -316,6 +331,8 @@ func (s *Server) handleRegisterRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+
 	var req registerRepoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "VDX-400", "invalid JSON body")
@@ -345,6 +362,18 @@ func (s *Server) handleRegisterRepo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VDX-400",
 			"path must be within your home directory")
 		return
+	}
+	// Symlink-escape guard: resolve the real path before trusting the
+	// withinHomeDir result. EvalSymlinks fails for non-existent paths, but the
+	// stat below will reject those anyway. If the real path is outside $HOME,
+	// reject without leaking the target.
+	if real, serr := filepath.EvalSymlinks(absPath); serr == nil {
+		if !withinHomeDir(real) {
+			writeError(w, http.StatusBadRequest, "VDX-400",
+				"path resolves outside your home directory via a symlink")
+			return
+		}
+		absPath = real
 	}
 
 	// Path must exist.

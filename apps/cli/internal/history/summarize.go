@@ -43,15 +43,17 @@ func Summarize(changes []Change) string {
 	var order []bucket
 
 	for _, c := range changes {
-		b := bucket{c.Type, c.Kind, c.NewContent, c.Section}
+		// Only code fences carry a language; leave it empty for every other
+		// kind so buckets dedup by (type, kind, section) and not by
+		// accidentally-overlapping content text.
+		lang := ""
 		if c.Kind == BlockCodeFence {
-			// Extract lang from the first line of the code fence.
-			b.lang = extractFenceLang(c.NewContent)
-			if b.lang == "" {
-				b.lang = extractFenceLang(c.OldContent)
+			lang = extractFenceLang(c.NewContent)
+			if lang == "" {
+				lang = extractFenceLang(c.OldContent)
 			}
 		}
-		b.lang = extractFenceLang(c.OldContent + c.NewContent)
+		b := bucket{ct: c.Type, kind: c.Kind, lang: lang, section: c.Section}
 		if _, seen := counts[b]; !seen {
 			order = append(order, b)
 		}

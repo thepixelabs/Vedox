@@ -11,6 +11,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -180,20 +181,32 @@ func (g *GraphStore) GetAllRefsForPrefix(ctx context.Context, prefix string) ([]
 		return nil, fmt.Errorf("docgraph: GetAllRefsForPrefix: empty prefix")
 	}
 	// SQLite LIKE with a trailing wildcard uses the idx_doc_refs_source index,
-	// so this query is index-assisted even on large graphs. The '%' wildcard is
-	// appended in Go to keep the query string a string literal.
+	// so this query is index-assisted even on large graphs. The caller's
+	// prefix is escaped below so a project id containing SQLite LIKE
+	// metacharacters ('%' and '_') does not accidentally match siblings.
 	rows, err := g.readDB.QueryContext(ctx,
 		`SELECT source_doc_id, target_path, link_type, line_num, anchor_text
 		   FROM doc_references
 		  WHERE source_doc_id LIKE ? ESCAPE '\'
 		  ORDER BY source_doc_id, line_num, id`,
-		prefix+"%",
+		escapeLikePrefix(prefix)+"%",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("docgraph: GetAllRefsForPrefix %q: %w", prefix, err)
 	}
 	defer rows.Close()
 	return scanRefs(rows)
+}
+
+// escapeLikePrefix escapes the LIKE metacharacters '%' and '_' (plus the
+// escape char '\' itself) so an arbitrary caller-supplied prefix matches
+// literally. Matches the `ESCAPE '\'` clause in GetAllRefsForPrefix.
+func escapeLikePrefix(s string) string {
+	// Escape the escape character first so we do not double-escape below.
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
 
 // scanRefs scans a *sql.Rows result set into a []DocRef slice.

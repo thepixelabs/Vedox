@@ -53,13 +53,17 @@ func atomicFileWrite(boundary, absPath string, data []byte, dirMode, fileMode os
 		cleanup()
 		return fmt.Errorf("fsync temp file: %w", err)
 	}
+	// Apply file mode via fchmod on the open descriptor BEFORE Close so a
+	// racing local attacker cannot substitute the path between Close and
+	// Chmod. Path-based chmod has a TOCTOU window; fchmod does not.
+	if err := tmp.Chmod(fileMode); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		cleanup()
 		return fmt.Errorf("close temp file: %w", err)
-	}
-	if err := os.Chmod(tmpPath, fileMode); err != nil {
-		cleanup()
-		return fmt.Errorf("chmod temp file: %w", err)
 	}
 	if err := os.Rename(tmpPath, absPath); err != nil {
 		cleanup()

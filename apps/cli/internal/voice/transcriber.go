@@ -19,6 +19,7 @@ package voice
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 // Transcriber converts a slice of PCM float32 audio samples into a text
@@ -68,6 +69,11 @@ func NewTranscriber(modelPath string) (Transcriber, error) {
 //	responses <- "vedox document everything"
 //	responses <- "vedox stop"
 //	st := NewStubTranscriber(responses)
+//
+// StubTranscriber is safe for concurrent Transcribe / Close calls — the
+// closed flag is kept in an atomic.Bool so tests that run the pipeline
+// goroutine and invoke Close from t.Cleanup (from the test goroutine)
+// do not race under -race.
 type StubTranscriber struct {
 	// Responses is a channel of strings that Transcribe drains in order.
 	// When the channel is nil or has no buffered value, FallbackText is
@@ -78,8 +84,10 @@ type StubTranscriber struct {
 	// Defaults to "" (empty string → CommandUnknown from the parser).
 	FallbackText string
 
-	// closed tracks whether Close has been called.
-	closed bool
+	// closed tracks whether Close has been called. Atomic so Transcribe
+	// (pipeline goroutine) and Close (test goroutine) never race on the
+	// flag bit.
+	closed atomic.Bool
 }
 
 // NewStubTranscriber constructs a StubTranscriber.  Pass nil for responses to
@@ -91,7 +99,7 @@ func NewStubTranscriber(responses chan string) *StubTranscriber {
 // Transcribe implements Transcriber.  It respects ctx cancellation, drains
 // one item from Responses if available, and otherwise returns FallbackText.
 func (s *StubTranscriber) Transcribe(ctx context.Context, audio []float32) (string, error) {
-	if s.closed {
+	if s.closed.Load() {
 		return "", fmt.Errorf("stub transcriber: already closed")
 	}
 
@@ -123,6 +131,6 @@ func (s *StubTranscriber) Transcribe(ctx context.Context, audio []float32) (stri
 
 // Close implements Transcriber.
 func (s *StubTranscriber) Close() error {
-	s.closed = true
+	s.closed.Store(true)
 	return nil
 }

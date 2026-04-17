@@ -16,6 +16,7 @@ import (
 // TestAgeStore_RoundTrip verifies that a secret written via Put can be
 // retrieved via Get and that Delete removes it from subsequent List/Get calls.
 func TestAgeStore_RoundTrip(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 	// Inject passphrase via env so Open does not attempt a TTY prompt.
 	t.Setenv("VEDOX_AGE_PASSPHRASE", "correct-horse-battery-staple-test")
@@ -66,6 +67,7 @@ func TestAgeStore_RoundTrip(t *testing.T) {
 // TestAgeStore_Persistence verifies that a new AgeStore instance reading the
 // same secrets.age file (same passphrase) sees the previously written secrets.
 func TestAgeStore_Persistence(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 	t.Setenv("VEDOX_AGE_PASSPHRASE", "persistence-test-passphrase")
 
@@ -98,6 +100,7 @@ func TestAgeStore_Persistence(t *testing.T) {
 // TestAgeStore_WrongPassphrase ensures that an incorrect passphrase causes
 // Open to fail at the decrypt step rather than silently returning empty data.
 func TestAgeStore_WrongPassphrase(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 
 	// Write with the correct passphrase.
@@ -120,6 +123,7 @@ func TestAgeStore_WrongPassphrase(t *testing.T) {
 
 // TestAgeStore_NotFound verifies ErrNotFound semantics on a fresh empty store.
 func TestAgeStore_NotFound(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 	t.Setenv("VEDOX_AGE_PASSPHRASE", "test-passphrase")
 
@@ -142,6 +146,7 @@ func TestAgeStore_NotFound(t *testing.T) {
 // TestAgeStore_MultipleKeys verifies that multiple keys coexist correctly in
 // the same encrypted file.
 func TestAgeStore_MultipleKeys(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 	t.Setenv("VEDOX_AGE_PASSPHRASE", "multi-key-passphrase")
 
@@ -174,6 +179,7 @@ func TestAgeStore_MultipleKeys(t *testing.T) {
 // TestAgeStore_PassphraseFile verifies that VEDOX_AGE_PASSPHRASE_FILE is
 // honoured over VEDOX_AGE_PASSPHRASE.
 func TestAgeStore_PassphraseFile(t *testing.T) {
+	secrets.LowerScryptWorkFactorForTests(t, 10)
 	dir := t.TempDir()
 
 	// Write passphrase to a temp file.

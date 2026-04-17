@@ -246,6 +246,101 @@ func TestGitVersion(t *testing.T) {
 	}
 }
 
+// ── input validation / injection defence tests ────────────────────────────────
+
+// TestFileHistory_RejectsDashRepoPath is a regression test for a git argv-
+// injection surface: a repoPath starting with '-' would previously be passed
+// as "-C -foo", which git interprets as an option rather than a path. The
+// fix uses cmd.Dir and also validates the input.
+func TestFileHistory_RejectsDashRepoPath(t *testing.T) {
+	_, err := FileHistory("-malicious", "file.md", 0)
+	if err == nil {
+		t.Fatal("FileHistory: expected error for repoPath starting with '-', got nil")
+	}
+	if !strings.Contains(err.Error(), "repoPath") {
+		t.Errorf("FileHistory: expected error mentioning repoPath, got %v", err)
+	}
+}
+
+// TestFileHistory_RejectsDashFilePath is a regression test for the same
+// argv-injection surface in the filePath argument.
+func TestFileHistory_RejectsDashFilePath(t *testing.T) {
+	repoRoot, _ := makeTempRepo(t)
+	_, err := FileHistory(repoRoot, "-malicious", 0)
+	if err == nil {
+		t.Fatal("FileHistory: expected error for filePath starting with '-', got nil")
+	}
+	if !strings.Contains(err.Error(), "filePath") {
+		t.Errorf("FileHistory: expected error mentioning filePath, got %v", err)
+	}
+}
+
+// TestFileHistory_RejectsNULInFilePath covers CWE-78: a NUL in a path
+// can truncate arguments passed to execve.
+func TestFileHistory_RejectsNULInFilePath(t *testing.T) {
+	repoRoot, _ := makeTempRepo(t)
+	_, err := FileHistory(repoRoot, "ok/file.md\x00../../../etc/passwd", 0)
+	if err == nil {
+		t.Fatal("FileHistory: expected error for filePath containing NUL, got nil")
+	}
+}
+
+// TestFileAtCommit_RejectsColonInPath verifies that a colon in the path is
+// rejected so a crafted path cannot smuggle an alternate ref into `git show`.
+func TestFileAtCommit_RejectsColonInPath(t *testing.T) {
+	repoRoot, _ := makeTempRepo(t)
+	// 40-char hex SHA — validates shape.
+	sha := strings.Repeat("0", 40)
+	_, err := fileAtCommit(context.Background(), repoRoot, "bad:path.md", sha)
+	if err == nil {
+		t.Fatal("fileAtCommit: expected error for path containing ':', got nil")
+	}
+}
+
+// TestFileAtCommit_RejectsBadSHA verifies that an obviously bogus commit hash
+// is rejected before the subprocess runs.
+func TestFileAtCommit_RejectsBadSHA(t *testing.T) {
+	repoRoot, _ := makeTempRepo(t)
+	_, err := fileAtCommit(context.Background(), repoRoot, "file.md", "not-a-sha")
+	if err == nil {
+		t.Fatal("fileAtCommit: expected error for invalid SHA, got nil")
+	}
+}
+
+// TestIsGitSHA spot-checks the hash-shape validator — important because it
+// guards the "git show <hash>:<path>" ref construction.
+func TestIsGitSHA(t *testing.T) {
+	cases := map[string]bool{
+		strings.Repeat("a", 40):   true,
+		strings.Repeat("0", 40):   true,
+		"abcdef0123456789abcdef0123456789abcdef01": true,
+		"":          false,
+		"abc":       false,
+		strings.Repeat("A", 40): false, // uppercase is not what git emits
+		strings.Repeat("g", 40): false, // g is outside 0-9a-f
+		strings.Repeat("a", 41): false, // too long
+	}
+	for in, want := range cases {
+		if got := isGitSHA(in); got != want {
+			t.Errorf("isGitSHA(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// TestClassifyAuthor_BodyTrailerMatchesEvenWhenEmailIsHuman is a regression
+// test: previously classifyAuthor was invoked with the commit subject instead
+// of the body, so the Co-Authored-By trailer — which always lives in the
+// body — never matched. Now gitlog passes subject + body joined by newline.
+func TestClassifyAuthor_BodyTrailerMatchesEvenWhenEmailIsHuman(t *testing.T) {
+	email := "alice@example.com"
+	subject := "docs: update guide"
+	body := "Refines the intro.\n\nCo-Authored-By: Vedox Doc Agent <agent@vedox.dev>\n"
+	got := classifyAuthor(email, subject+"\n"+body)
+	if got != "vedox-agent" {
+		t.Errorf("classifyAuthor: want 'vedox-agent', got %q", got)
+	}
+}
+
 // ── parseISO tests ────────────────────────────────────────────────────────────
 
 func TestParseISO(t *testing.T) {

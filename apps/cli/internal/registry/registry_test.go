@@ -507,6 +507,98 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 }
 
+// ---- TestReload_ConcurrentWithAdd (regression: file-lock on orphan write) ----
+
+// TestReload_ConcurrentWithAdd exercises the race that existed before Reload
+// acquired the advisory file lock. Prior to the fix, a Reload that needed to
+// persist orphan-annotation updates would race with a concurrent Add from
+// another goroutine (or another process), producing a last-writer-wins
+// corruption of the manifest.
+//
+// With the fix in place, Reload now holds the same flock that Add does, so
+// interleaved writes serialise cleanly and every Add that returned nil must
+// appear in the final List().
+func TestReload_ConcurrentWithAdd(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "repos.json")
+
+	reg, err := registry.NewFileRegistry(path, nil)
+	if err != nil {
+		t.Fatalf("NewFileRegistry: %v", err)
+	}
+
+	// Seed an orphan repo so Reload has a reason to write the manifest back.
+	if err := reg.Add(makeRepo("ghost", registry.RepoTypeBareLocal, "/tmp/this-path-does-not-exist-vdx-test")); err != nil {
+		t.Fatalf("Add ghost: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	const workers = 8
+	addedIDs := make(chan string, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			// Use a unique name per goroutine; time.Now is not unique enough
+			// under -race so we include n explicitly.
+			name := fmt.Sprintf("alpha-%d", n)
+			r := makeRepo(name, registry.RepoTypeBareLocal, "/tmp/"+name)
+			if err := reg.Add(r); err != nil {
+				if !isNameConflict(err) {
+					t.Errorf("concurrent Add: %v", err)
+				}
+				return
+			}
+			// After the Add succeeded, find the assigned ID.
+			repos, _ := reg.List()
+			for _, x := range repos {
+				if x.Name == name {
+					addedIDs <- x.ID
+					break
+				}
+			}
+		}(i)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Reload repeatedly while adds are in flight.
+			for k := 0; k < 5; k++ {
+				if err := reg.Reload(); err != nil {
+					t.Errorf("Reload: %v", err)
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(addedIDs)
+
+	// Collect the IDs that successfully Add-ed and verify each one survives
+	// the final Reload — before the fix, Reload's unlocked writeback could
+	// clobber a concurrent Add's state.
+	successful := make(map[string]bool)
+	for id := range addedIDs {
+		successful[id] = true
+	}
+
+	if err := reg.Reload(); err != nil {
+		t.Fatalf("final Reload: %v", err)
+	}
+	repos, _ := reg.List()
+	gotIDs := make(map[string]bool, len(repos))
+	for _, r := range repos {
+		gotIDs[r.ID] = true
+	}
+	for id := range successful {
+		if !gotIDs[id] {
+			t.Errorf("repo ID %q was added successfully but is missing after Reload", id)
+		}
+	}
+}
+
 // ---- TestPersistence (cross-instance) ----------------------------------------
 
 func TestPersistence(t *testing.T) {

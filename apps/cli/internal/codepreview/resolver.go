@@ -37,6 +37,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path"
@@ -232,11 +233,20 @@ func Resolve(projectRoot, vedoxURL string) (*Preview, error) {
 
 	buf := make([]byte, maxFileBytes)
 	n, readErr := readFull(f, buf)
+	if readErr != nil {
+		// A partial read with a real error is reported rather than silently
+		// returning the prefix. readFull swallows io.EOF as nil, so any error
+		// here is an actual filesystem failure (permissions, short read, etc.).
+		return nil, fmt.Errorf("codepreview: read %q: %w", realTarget, readErr)
+	}
 	raw := buf[:n]
 
 	truncated := false
-	if readErr == nil && n == maxFileBytes {
-		// Check if there is more beyond the cap.
+	if n == maxFileBytes {
+		// Check if there is more beyond the cap. An error on the probing read
+		// does not affect correctness — we already have the first maxFileBytes
+		// bytes; we just cannot confirm truncation in that case and treat it
+		// as non-truncated rather than fail the preview.
 		extra := make([]byte, 1)
 		nn, _ := f.Read(extra)
 		if nn > 0 {
@@ -264,16 +274,13 @@ func Resolve(projectRoot, vedoxURL string) (*Preview, error) {
 		start = 1
 		end = totalLines
 	} else {
-		// Validate anchor bounds.
+		// Validate anchor bounds. start and end are both >=1 here because
+		// parseAnchor rejects non-positive integers.
 		if end-start+1 > maxLineRange {
 			return nil, ErrAnchorRangeTooBig
 		}
 		if start > totalLines || end > totalLines {
 			return nil, ErrAnchorOutOfRange
-		}
-		// Clamp end to EOF (single-line anchors have end == start).
-		if end > totalLines {
-			end = totalLines
 		}
 	}
 
@@ -438,17 +445,16 @@ func readFull(f *os.File, buf []byte) (int, error) {
 		total += n
 		if err != nil {
 			// io.EOF means we consumed the file normally.
-			if isEOF(err) {
+			// errors.Is is stable across runtimes — a string compare on
+			// err.Error() is brittle because other wrapped errors can have
+			// the same message ("EOF") yet not be io.EOF.
+			if errors.Is(err, io.EOF) {
 				return total, nil
 			}
 			return total, err
 		}
 	}
 	return total, nil
-}
-
-func isEOF(err error) bool {
-	return err != nil && err.Error() == "EOF"
 }
 
 // splitLines splits a byte slice on newlines and returns the lines as strings.

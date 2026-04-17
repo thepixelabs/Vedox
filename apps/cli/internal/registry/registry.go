@@ -147,12 +147,27 @@ type ProjectRegistry interface {
 // Every mutation acquires the advisory lock, reads the current manifest,
 // applies the change, writes the manifest atomically, then updates the cache.
 //
+// Because writeManifestLocked uses a temp-file-plus-rename pattern, the
+// post-rename inode of repos.json is different from the inode the flock was
+// acquired on. That means flock alone cannot protect two in-process
+// goroutines from clobbering each other — the second goroutine can open
+// the unlinked old inode, flock it successfully, and write stale state back
+// over the first goroutine's commit. writeMu serialises the full
+// open→read→write cycle within a single process so that never happens.
+// Cross-process coordination still relies on flock; for single-daemon
+// deployments (the vedox target) the flock is belt-and-braces.
+//
 // If globalDB is non-nil, every manifest write also upserts all repo records
 // into global.db so that the analytics FK chain (analytics_cache → repos.id)
 // always has an authoritative repo_id → path mapping.
 type FileRegistry struct {
 	path     string // absolute path to repos.json
 	globalDB *db.GlobalDB
+
+	// writeMu serialises the full flock+read+write+cache-refresh sequence
+	// across goroutines in THIS process. See the type doc for why this is
+	// needed on top of flock.
+	writeMu sync.Mutex
 
 	mu     sync.RWMutex
 	byID   map[string]Repo
@@ -334,9 +349,29 @@ func (r *FileRegistry) Default() (Repo, error) {
 // Reload drops the in-memory cache and re-reads the manifest from disk.
 // Orphan detection is performed: repos whose RootPath does not exist on disk
 // are marked StatusOrphan.
+//
+// The re-read and any orphan annotation write go through the advisory file
+// lock so concurrent processes cannot corrupt the manifest with interleaved
+// writes. A persist failure during annotation write is surfaced to the
+// caller; the in-memory cache is still refreshed from what was read so the
+// registry remains consistent with whatever is currently on disk.
 func (r *FileRegistry) Reload() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	// Serialise in-process writers so Reload's optional orphan-write does
+	// not race a concurrent Add/Remove/SetDefault.
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+
+	// Acquire the advisory file lock so we observe a consistent snapshot
+	// and so our orphan-annotation write cannot race another process's Add.
+	f, err := os.OpenFile(r.path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("registry.Reload: open manifest for locking: %w", err)
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("registry.Reload: acquire file lock: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 
 	m, err := r.readManifest()
 	if err != nil {
@@ -365,17 +400,23 @@ func (r *FileRegistry) Reload() error {
 	}
 
 	if changed {
-		// Write back the orphan annotations. We do NOT hold the file lock here
-		// because Reload is called from a signal handler context where we already
-		// hold the write mutex; a deadlock would occur if withFileLock tried to
-		// acquire the write mutex again. Instead we write directly.
-		if err := r.writeManifestLocked(m); err != nil {
-			// Non-fatal: cache will still reflect reality even if persist fails.
-			_ = err
+		// Write back the orphan annotations under the same file lock we
+		// already hold. writeManifestLocked does not re-enter r.mu, so no
+		// deadlock is possible.
+		if writeErr := r.writeManifestLocked(m); writeErr != nil {
+			// Surface the persist failure: the caller needs to know the
+			// on-disk state diverged from the cache we are about to populate.
+			// Cache refresh still proceeds so the registry reflects reality.
+			r.mu.Lock()
+			r.populateCache(m)
+			r.mu.Unlock()
+			return fmt.Errorf("registry.Reload: persist orphan annotations: %w", writeErr)
 		}
 	}
 
+	r.mu.Lock()
 	r.populateCache(m)
+	r.mu.Unlock()
 	return nil
 }
 
@@ -385,6 +426,11 @@ func (r *FileRegistry) Reload() error {
 // manifest, calls fn with it, and on nil return writes the updated manifest
 // atomically. It then refreshes the in-memory cache.
 func (r *FileRegistry) withFileLock(fn func(m *manifest) error) error {
+	// Serialise in-process writers first so two goroutines cannot race on
+	// the rename-replaces-inode lifecycle — see the FileRegistry type doc.
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+
 	// Open (or create) the lock file. We use the manifest file itself as the
 	// lock target — flock(2) is per-fd, per-process.
 	f, err := os.OpenFile(r.path, os.O_RDWR|os.O_CREATE, 0o600)
@@ -397,7 +443,7 @@ func (r *FileRegistry) withFileLock(fn func(m *manifest) error) error {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		return fmt.Errorf("registry: acquire file lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 
 	// Read current manifest through the locked fd.
 	m, err := r.readManifest()
@@ -497,24 +543,31 @@ func (r *FileRegistry) writeManifestLocked(m manifest) error {
 	ok = true
 
 	// Mirror repo records into global.db (best-effort; does not fail the write).
-	if r.globalDB != nil {
-		r.syncToGlobalDB(m)
+	// Snapshot the handle under the read lock so a concurrent SetGlobalDB
+	// cannot trigger a data race on r.globalDB.
+	r.mu.RLock()
+	gdb := r.globalDB
+	r.mu.RUnlock()
+	if gdb != nil {
+		syncToGlobalDB(gdb, m)
 	}
 
 	return nil
 }
 
-// syncToGlobalDB upserts every repo in the manifest into global.db.
-// Called only when r.globalDB is non-nil. Errors are intentionally swallowed
-// because the JSON file is the authoritative source of truth; global.db is a
-// denormalised read-side mirror.
-func (r *FileRegistry) syncToGlobalDB(m manifest) {
+// syncToGlobalDB upserts every repo in the manifest into the supplied
+// GlobalDB handle. The handle is passed in (rather than read from the
+// receiver) so the caller can snapshot it atomically with the registry's
+// read lock and avoid racing a concurrent SetGlobalDB. Errors are
+// intentionally swallowed because the JSON file is the authoritative source
+// of truth; global.db is a denormalised read-side mirror.
+func syncToGlobalDB(g *db.GlobalDB, m manifest) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	for _, repo := range m.Repos {
 		dbRepo := repoToDBRepo(repo)
-		if err := r.globalDB.SaveRepo(ctx, dbRepo); err != nil {
+		if err := g.SaveRepo(ctx, dbRepo); err != nil {
 			// Non-fatal: the JSON manifest succeeded; log to stderr as a warning.
 			// A full logger is not available here without introducing another
 			// dependency; the error is surfaced on the next globaldb read.
