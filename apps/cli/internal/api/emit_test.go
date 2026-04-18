@@ -286,7 +286,17 @@ func TestEmit_AgentInstalled_HandlerReferencesKind(t *testing.T) {
 func TestEmit_DocumentPublished(t *testing.T) {
 	f := newEmitFixture(t, false)
 
-	// Force git identity so handlePublish doesn't bail with VDX-003.
+	// Sandbox git config in a temp HOME so `git config user.name` (used by
+	// gitcheck's identity probe) finds a value even on CI runners that have
+	// no global identity configured. GIT_AUTHOR_*/COMMITTER_* env vars cover
+	// `git commit` but NOT `git config --get`.
+	gitHome := t.TempDir()
+	t.Setenv("HOME", gitHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(gitHome, ".config"))
+	if err := os.WriteFile(filepath.Join(gitHome, ".gitconfig"),
+		[]byte("[user]\n\tname = Test\n\temail = test@example.com\n"), 0o600); err != nil {
+		t.Fatalf("write .gitconfig: %v", err)
+	}
 	t.Setenv("GIT_AUTHOR_NAME", "Test")
 	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Test")
