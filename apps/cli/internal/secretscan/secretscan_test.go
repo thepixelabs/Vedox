@@ -620,7 +620,9 @@ func TestScanReader(t *testing.T) {
 func TestGatePreCommit_BlocksHighSeverity(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "config.sh")
-	if err := os.WriteFile(f, []byte("export GITHUB_TOKEN=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ABCD\n"), 0600); err != nil {
+	// Use a high-entropy GitHub PAT (ghp_ + exactly 36 mixed-case alphanum chars)
+	// that satisfies betterleaks' entropy gate as well as our hand-rolled rule.
+	if err := os.WriteFile(f, []byte("export GITHUB_TOKEN=ghp_T8Kj9mNpQr3sVwXyZ5aB2cD6eF0gH4iJkLmN\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	findings, err := secretscan.GatePreCommit([]string{f})
@@ -685,11 +687,16 @@ func TestGatePreCommit_BlocksPEMFile(t *testing.T) {
 func TestGatePreCommit_BlocksCriticalPEMContent(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "setup.go")
+	// The PEM key body needs 64+ chars of base64 content so betterleaks'
+	// private-key rule (which anchors on the full header+body+footer) fires.
+	// Our hand-rolled PEM-PRIVATE-KEY rule fires on the header alone, so both
+	// scanner paths block this file. The gate-level assertion is scanner-agnostic.
 	content := `package main
 
 // privateKey is the server's TLS key.
 const privateKey = ` + "`" + `-----BEGIN RSA PRIVATE KEY-----
-MIIEowIBAAKCAQEA2a2rwplBQLzHPZe5MG...
+MIIEowIBAAKCAQEAxK9mP2vQ8nR4wL7jZ3bF6cT1dY5hA0eGr3sVwXyZ5aB2
+cD6eF0gH4iJkLmNpQrSTuVwXyZ5aB2cD6eF0gH4iJkLmNpQrSTuVwXyZ5ab
 -----END RSA PRIVATE KEY-----` + "`"
 	if err := os.WriteFile(f, []byte(content), 0600); err != nil {
 		t.Fatal(err)
@@ -698,14 +705,12 @@ MIIEowIBAAKCAQEA2a2rwplBQLzHPZe5MG...
 	if err == nil {
 		t.Fatal("expected GatePreCommit to block file containing PEM private key")
 	}
-	pemFound := false
-	for _, fn := range findings {
-		if fn.RuleID == "PEM-PRIVATE-KEY" {
-			pemFound = true
-		}
-	}
-	if !pemFound {
-		t.Errorf("expected PEM-PRIVATE-KEY finding, got findings: %v", findings)
+	// Verify that the gate produced at least one blocking finding.
+	// We do not assert a specific rule ID here because the active scanner
+	// (betterleaks or hand-rolled fallback) may use different identifiers.
+	// The gate test is: did the commit get blocked? Yes it did (err != nil).
+	if len(findings) == 0 {
+		t.Errorf("expected at least one finding, got none")
 	}
 }
 

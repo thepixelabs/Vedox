@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,7 +76,15 @@ const maxScanFileBytes = 16 * 1024 * 1024
 //	// warnings (medium/low findings) are in findings; log them
 //	callGitCommit(...)
 func GatePreCommit(paths []string) ([]Finding, error) {
-	return gatePreCommitWithScanner(New(DefaultRules()), paths)
+	s, err := NewBetterleaksScanner()
+	if err != nil {
+		// betterleaks config parse failure — fall back to hand-rolled rules so
+		// the gate is never left open. This branch is unlikely in practice
+		// (the config is embedded in the binary) but must be handled correctly.
+		log.Printf("secretscan: betterleaks unavailable (%v); falling back to hand-rolled rules", err)
+		s = New(DefaultRules())
+	}
+	return gatePreCommitWithScanner(s, paths)
 }
 
 // gatePreCommitWithScanner is the internal version that accepts an injected
