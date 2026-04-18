@@ -92,8 +92,11 @@ func (s *Server) handleGenerateNames(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGenerateNamesStatus(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "jobId")
 
-	job := s.aiJobStore.Get(jobID)
-	if job == nil {
+	// Snapshot (not Get) so writeJSON encodes a value copy taken under the
+	// JobStore's lock. Get returns an aliased *GenerationJob that would
+	// race with run()'s concurrent field mutations during JSON encoding.
+	job, ok := s.aiJobStore.Snapshot(jobID)
+	if !ok {
 		writeError(w, http.StatusNotFound, "VDX-404",
 			"job not found; it may have expired or the server was restarted")
 		return

@@ -18,6 +18,7 @@
   import PaneGroup from "$lib/components/PaneGroup.svelte";
   import type { DocData } from "$lib/components/PaneView.svelte";
   import { panesStore } from "$lib/stores/panes";
+  import HistoryTimeline from "$lib/components/history/HistoryTimeline.svelte";
   import type { DocPageData } from "./+page.js";
 
   interface Props {
@@ -155,6 +156,16 @@
   });
 
   // ---------------------------------------------------------------------------
+  // History panel
+  // ---------------------------------------------------------------------------
+
+  let showHistory = $state(false);
+
+  function toggleHistory(): void {
+    showHistory = !showHistory;
+  }
+
+  // ---------------------------------------------------------------------------
   // Derived title
   // ---------------------------------------------------------------------------
 
@@ -197,6 +208,33 @@
       <div class="doc-view__path" aria-label="File path">
         <code>{docPath}</code>
       </div>
+
+      <!-- History toggle -->
+      <button
+        class="doc-view__history-btn"
+        class:doc-view__history-btn--active={showHistory}
+        type="button"
+        aria-pressed={showHistory}
+        aria-label="{showHistory ? 'Hide' : 'Show'} document history"
+        title="Toggle history panel (⌘⇧H)"
+        onclick={toggleHistory}
+      >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        History
+      </button>
 
       <!-- Op status badge -->
       {#if opState !== "idle"}
@@ -263,8 +301,24 @@
     </div>
   {/if}
 
+  <!-- ── History panel ────────────────────────────────────────────────────── -->
+  {#if showHistory}
+    <div
+      class="doc-view__history-panel"
+      role="region"
+      aria-label="Document history"
+    >
+      <HistoryTimeline {projectId} {docPath} />
+    </div>
+  {/if}
+
   <!-- ── Editor area ──────────────────────────────────────────────────────── -->
-  <div class="doc-view__editor-area" role="region" aria-label="Document editor">
+  <div
+    class="doc-view__editor-area"
+    class:doc-view__editor-area--split={showHistory}
+    role="region"
+    aria-label="Document editor"
+  >
     {#if data.error}
       <!-- Error state — doc failed to load -->
       <div class="doc-view__error" role="alert">
@@ -494,6 +548,61 @@
     border-radius: var(--radius-sm);
   }
 
+  /* ── History toggle button ───────────────────────────────────────────────── */
+
+  .doc-view__history-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 3px var(--space-3);
+    background-color: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition:
+      background-color 80ms var(--ease-out),
+      color 80ms var(--ease-out),
+      border-color 80ms var(--ease-out);
+  }
+
+  .doc-view__history-btn:hover {
+    background-color: var(--color-surface-overlay);
+    color: var(--color-text-secondary);
+    border-color: var(--color-border-strong);
+  }
+
+  .doc-view__history-btn--active {
+    background-color: var(--color-accent-subtle);
+    color: var(--color-accent);
+    border-color: var(--accent-border, var(--color-accent));
+  }
+
+  .doc-view__history-btn--active:hover {
+    background-color: color-mix(in oklch, var(--color-accent) 20%, transparent);
+    color: var(--color-accent);
+  }
+
+  .doc-view__history-btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* ── History panel ───────────────────────────────────────────────────────── */
+
+  .doc-view__history-panel {
+    flex-shrink: 0;
+    max-height: 42vh;
+    min-height: 240px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--color-border);
+    background-color: var(--color-surface-base);
+  }
+
   /* ── Editor container ────────────────────────────────────────────────────── */
 
   .doc-view__editor-area {
@@ -502,6 +611,11 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+
+  /* When history panel is open, give editor a minimum breathing room */
+  .doc-view__editor-area--split {
+    min-height: 200px;
   }
 
   /* ── Loading state ───────────────────────────────────────────────────────── */

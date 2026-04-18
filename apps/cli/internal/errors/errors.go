@@ -95,6 +95,12 @@ const (
 	// or when a key has been suspended by the circuit breaker after too many
 	// consecutive errors.
 	ErrRateLimitExceeded Code = "VDX-306"
+
+	// ErrReplayedRequest is returned when the nonce cache detects that an
+	// identical HMAC-signed request (same keyID + timestamp + body hash) has
+	// already been processed within the 10-minute replay window. This closes
+	// the replay attack vector described in HIGH-05 (CWE-294).
+	ErrReplayedRequest Code = "VDX-307"
 )
 
 const docsBaseURL = "https://vedox.dev/errors"
@@ -315,5 +321,16 @@ func RateLimitExceeded(reason string) *VedoxError {
 	return New(
 		ErrRateLimitExceeded,
 		fmt.Sprintf("Rate limit exceeded: %s", reason),
+	)
+}
+
+// ReplayedRequest returns VDX-307 when the nonce cache detects a duplicate
+// HMAC-signed request within the replay window. Callers should respond with
+// HTTP 409 Conflict.
+func ReplayedRequest() *VedoxError {
+	return New(
+		ErrReplayedRequest,
+		"Replayed request rejected: this signed request has already been processed. "+
+			"Generate a new timestamp to issue a fresh request.",
 	)
 }

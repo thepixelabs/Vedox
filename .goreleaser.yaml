@@ -1,0 +1,514 @@
+# .goreleaser.yaml — Vedox release automation skeleton
+#
+# MAINTAINER NOTE (solo founder): This file drives the entire release pipeline.
+# Every block is commented to explain its purpose. If you change something here
+# and the release breaks, the most common cause is a secret placeholder that was
+# not filled in GitHub Environments → release environment → Secrets.
+#
+# Run locally (dry-run): goreleaser release --snapshot --clean
+# Full release: triggered automatically by the release.yml workflow on tag push.
+#
+# goreleaser Community edition (no license key required). Do not add
+# 'license_key:' here — Community edition covers every feature used below.
+#
+# Ruling references:
+#   R5 — //go:build release tag guard (embed is guarded; PR CI does not require SvelteKit build)
+#   CTO ruling — Windows skipped from required CI and release matrix (WSL2/best-effort only)
+#   WS-O — packaging workstream, Day 1 skeleton; notarization pipeline lands Week 9
+
+version: 2
+
+project_name: vedox
+
+# ---------------------------------------------------------------------------
+# Before hooks: build the SvelteKit editor before goreleaser compiles Go.
+#
+# IMPORTANT: This hook runs only during a real release (goreleaser release).
+# It does NOT run during PR CI because PR CI does not invoke goreleaser.
+# The //go:build release guard (R5) means the go build below embeds the
+# editor only when -tags=release is set — which only happens here.
+#
+# If the SvelteKit build fails, the entire release aborts before any
+# Go compilation happens — fail fast, no partial artifacts.
+# ---------------------------------------------------------------------------
+before:
+  hooks:
+    # Install pnpm dependencies (frozen lockfile — no drift on release runners)
+    - pnpm install --frozen-lockfile
+    # Build the SvelteKit static export that goes into apps/editor/build/
+    # goreleaser then passes -tags=release so the embed.go picks it up.
+    - pnpm --filter @vedox/editor build
+    # Copy the SvelteKit build output into the Go embed directory.
+    # The //go:build release guard in embed.go references editorassets/ via a
+    # local //go:embed directive — Go embed cannot cross module boundaries, so
+    # the assets must be inside apps/cli/. goreleaser copies them here before
+    # the Go compiler runs. editorassets/ contains only .gitkeep in the repo;
+    # real assets are never committed. See CTO ruling R12.
+    - cp -r apps/editor/build/* apps/cli/internal/webassets/editorassets/
+
+# ---------------------------------------------------------------------------
+# Builds: cross-compile matrix
+#
+# Binary entrypoint is apps/cli/cmd/vedox (confirm: apps/cli/cmd/ contains
+# main via root.go + registered commands — the package is 'cmd', built from
+# the module root apps/cli/).
+#
+# ldflags inject version, commit, and build date into the binary at link time.
+# Variable paths confirmed from apps/cli/cmd/root.go:
+#   github.com/vedox/vedox/cmd.version
+#   github.com/vedox/vedox/cmd.commit
+#   github.com/vedox/vedox/cmd.buildDate
+#
+# Windows is intentionally excluded per CTO ruling (WSL2/best-effort only).
+# Do not add windows/amd64 here without a CTO ruling reversal.
+# ---------------------------------------------------------------------------
+builds:
+  - id: vedox
+    # Main package lives at the root of apps/cli (go.mod module = github.com/vedox/vedox)
+    # goreleaser runs from repo root; dir scopes the build into apps/cli.
+    dir: apps/cli
+    main: .
+    binary: vedox
+
+    # -tags=release activates the //go:build release guard on embed.go,
+    # causing the SvelteKit build output to be embedded into the binary.
+    # PR CI does NOT set this flag — see docs in 02-go-embed-release-tag-design.md.
+    flags:
+      - -tags=release
+
+    ldflags:
+      # Strip debug info (-s -w) to reduce binary size.
+      # Inject version metadata at link time.
+      - -s -w
+      - -X github.com/vedox/vedox/cmd.version={{.Version}}
+      - -X github.com/vedox/vedox/cmd.commit={{.FullCommit}}
+      - -X github.com/vedox/vedox/cmd.buildDate={{.Date}}
+
+    env:
+      # Pure Go cross-compile — no CGO. SQLite uses go-sqlite3 which requires
+      # CGO. If go-sqlite3 is used, CGO_ENABLED=1 and a C cross-toolchain are
+      # required per platform. Using modernc.org/sqlite (pure Go) avoids this.
+      # MAINTAINER: If you switch SQLite drivers, re-evaluate CGO_ENABLED here.
+      - CGO_ENABLED=0
+
+    goos:
+      - linux
+      - darwin
+      # Windows intentionally omitted — CTO ruling, WSL2/best-effort only.
+
+    goarch:
+      - amd64
+      - arm64
+
+    # Disable GOARM — arm64 only, no 32-bit ARM targets.
+
+# ---------------------------------------------------------------------------
+# Universal binary (macOS only): merge darwin/amd64 + darwin/arm64 via lipo
+#
+# This produces a single "fat" binary that runs natively on both Apple Silicon
+# and Intel Macs. The Homebrew formula and .dmg both distribute this universal
+# binary. Platform-specific bottles are NOT needed — one artifact covers both.
+#
+# The universal binary is what the brews block (below) references.
+# ---------------------------------------------------------------------------
+universal_binaries:
+  - id: vedox-universal
+    # Combine the two darwin builds from the builds block above.
+    ids:
+      - vedox
+    # Replace the two arch-specific darwin archives with the universal one.
+    # Set to false to keep both — leave true (default) for clean distribution.
+    replace: true
+    # Name the output binary 'vedox' (no arch suffix on the universal binary).
+    name_template: vedox
+
+# ---------------------------------------------------------------------------
+# Archives: packaging format per platform
+#
+# Linux: tar.gz (standard for curl-install scripts and .deb/.rpm sources)
+# Darwin: zip (goreleaser native; .dmg wrapping happens in release.yml via
+#         create-dmg or hdiutil — that step is outside goreleaser scope because
+#         it requires a macOS runner and Xcode tools, not goreleaser itself)
+#
+# MAINTAINER: The .dmg creation for distribution-channels day-0 is handled
+# by a separate step in .github/workflows/release.yml (not yet written).
+# Goreleaser produces the signed binary inside a zip; the release.yml job
+# then wraps it in a .dmg using hdiutil or create-dmg before uploading to
+# the GitHub Release. See distribution-channels.md §Signing & Notarization.
+# ---------------------------------------------------------------------------
+archives:
+  - id: vedox-archive
+    # Only archive the builds from our single build target.
+    builds:
+      - vedox
+
+    # Platform-specific format selection.
+    format_overrides:
+      - goos: darwin
+        format: zip
+      - goos: linux
+        format: tar.gz
+
+    # Archive name template. Produces e.g.:
+    #   vedox-v2.0.0-linux-amd64.tar.gz
+    #   vedox-v2.0.0-darwin-universal.zip (after lipo merge)
+    name_template: "vedox-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+
+    # Files to include in the archive alongside the binary.
+    files:
+      - LICENSE
+      - README.md
+      # Install script for curl-pipe installs (if present at repo root).
+      # Comment out if install.sh lives at a CDN URL only.
+      # - install.sh
+
+# ---------------------------------------------------------------------------
+# Checksums: SHA-256 manifest
+#
+# Every release artifact (archives + universal binary) is listed in
+# vedox_checksums.txt with its SHA-256 hash. The install.sh script
+# verifies this before extracting. cosign also covers the archives
+# (separate step in release.yml outside goreleaser).
+# ---------------------------------------------------------------------------
+checksum:
+  name_template: "vedox_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+# ---------------------------------------------------------------------------
+# Signs: macOS codesign (stub — notarization pipeline lands Week 9)
+#
+# MAINTAINER: This block wires the codesign call for the macOS universal
+# binary. The actual signing certificate (Developer ID Application) must be
+# imported into the macOS runner's keychain before goreleaser runs.
+# The release.yml workflow handles keychain setup — see the import step
+# in the workflow (APPLE_CERTIFICATE_P12 secret).
+#
+# Placeholders:
+#   <TEAM_ID>         → fill with ${{ secrets.APPLE_TEAM_ID }} in release.yml
+#   <APPLE_ID_EMAIL>  → thepixelabs@gmail.com (OV-5 correction, confirmed)
+#   <AC_PASSWORD>     → fill with ${{ secrets.AC_PASSWORD }} in release.yml
+#
+# Week 9 task: wire notarytool into this block or into a post-goreleaser
+# step in release.yml. notarytool requires xcrun (macOS runner only).
+#
+# SLSA L3 provenance is NOT handled here — it is produced by
+# actions/attest-build-provenance@v2 in the release.yml workflow after
+# goreleaser finishes. See changelog item 12 and the release workflow stub.
+# ---------------------------------------------------------------------------
+signs:
+  - id: macos-codesign
+    # Only sign darwin artifacts.
+    ids:
+      - vedox-archive
+    # Signature artifacts are the signed zip files; goreleaser uploads them.
+    artifacts: archive
+    # Shell command goreleaser executes to sign each artifact.
+    # ${artifact} is goreleaser's substitution for the current artifact path.
+    # codesign flags:
+    #   --sign              Developer ID Application cert identity from keychain
+    #   --options runtime   Hardened runtime (required for notarization)
+    #   --timestamp         Embed a secure timestamp (required for notarization)
+    #   --force             Re-sign if already signed (idempotent in CI)
+    cmd: codesign
+    args:
+      - "--sign"
+      - "Developer ID Application: Pixelabs (<TEAM_ID>)"
+      - "--options"
+      - "runtime"
+      - "--timestamp"
+      - "--force"
+      - "${artifact}"
+    # goreleaser expects the signed file at the same path (codesign modifies
+    # in-place; no output path substitution needed).
+    output: true
+
+    # TODO (Week 9): Add notarytool submission here or as a post-goreleaser
+    # step in release.yml. Notarization is asynchronous — submit, poll, staple.
+    # Skeleton notarytool command (DO NOT ENABLE until pipeline is tested):
+    #
+    # xcrun notarytool submit "${artifact}" \
+    #   --apple-id thepixelabs@gmail.com \
+    #   --team-id <TEAM_ID> \
+    #   --password <AC_PASSWORD> \
+    #   --wait
+    # xcrun stapler staple "${artifact}"
+
+# ---------------------------------------------------------------------------
+# Changelog: auto-generated from conventional commits
+#
+# goreleaser reads git log since the previous tag and groups commits by type.
+# No separate semantic-release tool needed — this keeps the release pipeline
+# in a single tool.
+# ---------------------------------------------------------------------------
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      # Exclude noise from changelog — typos, WIP, merge commits.
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: "New Features"
+      regexp: "^feat"
+      order: 0
+    - title: "Bug Fixes"
+      regexp: "^fix"
+      order: 1
+    - title: "Performance"
+      regexp: "^perf"
+      order: 2
+    - title: "Other"
+      order: 999
+
+# ---------------------------------------------------------------------------
+# Release: GitHub Release configuration
+#
+# Draft mode is used for all releases — a human reviews before publishing.
+# Pre-release is set automatically for tags containing -alpha, -beta, or -rc.
+#
+# The install script footer references get.vedox.dev/install.sh — this CDN
+# URL is owned by the release-engineer (distribution-channels.md §Launch-Day
+# Plan). The URL must be live before the first release publishes.
+# ---------------------------------------------------------------------------
+release:
+  github:
+    owner: pixelicous
+    name: Vedox
+
+  # Draft: true means goreleaser creates a draft release; founder clicks
+  # "Publish release" after reviewing artifacts and changelog.
+  # This prevents an accidental publish on a bad tag.
+  draft: true
+
+  # Automatically mark as pre-release if the tag contains -alpha, -beta, or -rc.
+  # Examples: v2.0.0-alpha.1 → pre-release; v2.0.0 → full release.
+  prerelease: auto
+
+  # Footer appended to every GitHub Release body.
+  # get.vedox.dev/install.sh is the canonical curl-install URL.
+  # MAINTAINER: Update this URL once the CDN is live (release-engineer task).
+  footer: |
+    ## Install
+
+    **macOS (Homebrew — recommended):**
+    ```sh
+    brew tap pixelicous/vedox
+    brew install vedox
+    ```
+
+    **Linux / macOS (curl install):**
+    ```sh
+    curl -fsSL https://get.vedox.dev/install.sh | sh
+    ```
+
+    **Direct download:** see assets above. Verify with `vedox_{{ .Version }}_checksums.txt`.
+
+    ---
+    *Vedox — local-first, Git-native documentation operating system for solo developers.*
+
+# ---------------------------------------------------------------------------
+# Homebrew tap: auto-update formula on release
+#
+# Tap repo: pixelicous/homebrew-vedox
+# Formula lands at: Formula/vedox.rb
+#
+# PREREQUISITE (founder action — do once before first release):
+#   1. Create GitHub repo pixelicous/homebrew-vedox.
+#   2. Copy the Formula/ and Casks/ directories from the tap design doc:
+#      .tasks/vedox-v2/40-execution/WS-P-distribution/01-homebrew-tap-design.md
+#   3. Create a fine-grained PAT (or GitHub App) with contents: write +
+#      pull_requests: write scoped only to pixelicous/homebrew-vedox.
+#   4. Add HOMEBREW_TAP_TOKEN to the GitHub release environment secrets at:
+#      https://github.com/pixelicous/vedox/settings/environments
+#
+# Token strategy (recommended): use a GitHub App installation token generated
+# in the release workflow via tibdex/github-app-token@v2. Secrets needed:
+#   VEDOX_RELEASE_APP_ID          — GitHub App ID
+#   VEDOX_RELEASE_APP_PRIVATE_KEY — base64-encoded PEM private key
+# The release.yml workflow generates HOMEBREW_TAP_TOKEN from these before
+# goreleaser runs. See the tap design doc §3 for the full workflow snippet.
+#
+# For initial testing, a fine-grained PAT is acceptable as a short-term
+# substitute. Rotate it every 90 days.
+#
+# skip_upload: auto — formula is NOT pushed during `goreleaser --snapshot`
+# (local dry-run). Only pushed on a real tagged release.
+# ---------------------------------------------------------------------------
+brews:
+  - name: vedox
+
+    # Tap repo on GitHub.
+    repository:
+      owner: pixelicous
+      name: homebrew-vedox
+      # HOMEBREW_TAP_TOKEN: set as a GitHub Actions secret in the release environment.
+      # Generate via GitHub App token (see release.yml) or fine-grained PAT.
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      # Branch to open the version-bump PR against.
+      branch: main
+      # Goreleaser opens a PR from this branch name.
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          branch: main
+
+    # Formula file location inside the tap repo.
+    directory: Formula
+
+    # Formula metadata.
+    homepage: "https://vedox.dev"
+    description: "Local-first, Git-native documentation operating system for solo developers"
+    license: "PolyForm Shield 1.0.0"
+
+    # Skip during snapshot builds (goreleaser --snapshot / local dry-run).
+    skip_upload: auto
+
+    # Commit message for the version-bump PR.
+    # The accept-bump.yml workflow in the tap repo matches PRs whose branch
+    # starts with "chore/bump-vedox-" and merges them automatically if the
+    # diff only touches version/url/sha256 lines and brew audit passes.
+    commit_msg_template: "chore: bump vedox to {{ .Tag }}"
+
+    # No depends_on: the binary is statically linked Go — zero runtime deps.
+    # modernc.org/sqlite (pure Go) is embedded; no system libsqlite3 required.
+
+    # service block: registers vedox with brew services (launchd wrapper).
+    # `brew services start vedox` is the recommended daemon start for Homebrew users.
+    # NOTE: if the user also runs `vedox server --install-daemon`, there will be
+    # a double-registration conflict. The CLI must check for the Homebrew plist at
+    # ~/Library/LaunchAgents/homebrew.mxcl.vedox.plist and skip manual registration.
+    # Apple ID for notarization: thepixelabs@gmail.com
+    # Team ID: <TEAM_ID> — fill from secrets.APPLE_TEAM_ID in release.yml.
+    custom_block: |
+      livecheck do
+        url :stable
+        strategy :github_latest
+      end
+
+      service do
+        run [opt_bin/"vedox", "server"]
+        keep_alive true
+        log_path var/"log/vedox.log"
+        error_log_path var/"log/vedox.error.log"
+      end
+
+    # install block: placed verbatim into the formula's def install.
+    install: |
+      bin.install "vedox"
+      generate_completions_from_executable(bin/"vedox", "completion")
+
+    # test block: run by `brew test vedox` and by the tap's accept-bump CI.
+    # Kept minimal — must pass in a Homebrew sandbox without a running daemon.
+    # "vedox doctor --brief" is the preferred smoke test if the flag exists;
+    # fall back to "--version" only if it does not.
+    test: |
+      assert_match "vedox", shell_output("#{bin}/vedox --version")
+
+# ---------------------------------------------------------------------------
+# Docker: multi-arch image published to GHCR
+#
+# Registry: ghcr.io/pixelicous/vedox (GHCR only — no Docker Hub)
+# Architectures: linux/amd64 and linux/arm64 via docker buildx + QEMU
+# Runtime base: gcr.io/distroless/static-debian12:nonroot (~27 MB shipped)
+# Signing: keyless cosign OIDC + actions/attest-build-provenance@v2 (SLSA L3)
+#   — those steps live in .github/workflows/release.yml, not here.
+#
+# How it works:
+#   1. goreleaser builds the Go binary for linux/amd64 and linux/arm64 (above).
+#   2. The `dockers:` block below builds two arch-specific images from those
+#      binaries using docker buildx.
+#   3. The `docker_manifests:` block merges them into a multi-arch manifest list
+#      under the versioned tag and (on non-prerelease) the `latest` tag.
+#
+# Prerequisites for the release workflow (.github/workflows/release.yml):
+#   - name: Set up QEMU
+#     uses: docker/setup-qemu-action@v3
+#   - name: Set up Docker Buildx
+#     uses: docker/setup-buildx-action@v3
+#   - name: Login to GHCR
+#     uses: docker/login-action@v3
+#     with:
+#       registry: ghcr.io
+#       username: ${{ github.actor }}
+#       password: ${{ secrets.GITHUB_TOKEN }}
+#   The release job must also declare: permissions: packages: write
+#
+# First-time setup: after the first push, set the package visibility to
+# "public" in GitHub → Settings → Packages → vedox → Package settings.
+# This is a one-time manual step that cannot be automated by goreleaser.
+#
+# Breakage modes to watch for:
+#   - Docker Engine < 23 on the runner: buildx may silently fall back to
+#     legacy builder. Ensure setup-buildx-action runs first.
+#   - Partial manifests on aborted runs: use --skip-publish in dry-run mode.
+#   - arm64 QEMU emulation is 3-5x slower than native (expected, not a bug).
+# ---------------------------------------------------------------------------
+dockers:
+  - id: vedox-amd64
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    # The binary is copied into the image by the Dockerfile go-build stage.
+    # goreleaser passes the pre-built binary via the ids reference above; the
+    # Dockerfile's go-build stage rebuilds from source inside Docker for
+    # reproducibility — the goreleaser binary is not directly used here.
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .FullCommit }}"
+      - "--build-arg=BUILD_DATE={{ .Date }}"
+
+  - id: vedox-arm64
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-arm64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .FullCommit }}"
+      - "--build-arg=BUILD_DATE={{ .Date }}"
+
+# ---------------------------------------------------------------------------
+# Docker manifests: merge arch-specific images into a multi-arch manifest list
+#
+# The versioned tag (e.g., v2.0.0) is always pushed.
+# The `latest` tag is only pushed for non-prerelease tags — beta/rc images
+# never move `latest`. This is enforced by the `{{ if not .Prerelease }}`
+# conditional; goreleaser skips manifest entries with empty name_template.
+# ---------------------------------------------------------------------------
+docker_manifests:
+  - name_template: "ghcr.io/pixelicous/vedox:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-amd64"
+      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-arm64"
+
+  - name_template: "{{ if not .Prerelease }}ghcr.io/pixelicous/vedox:latest{{ end }}"
+    image_templates:
+      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-amd64"
+      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-arm64"
+
+# ---------------------------------------------------------------------------
+# Announce: disabled
+#
+# No Slack/Discord/Twitter announce hooks — solo founder, zero outbound calls
+# by default policy. Announcements are manual (Show HN, GitHub Discussions).
+# ---------------------------------------------------------------------------
+announce:
+  skip: "true"

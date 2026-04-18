@@ -1,0 +1,21 @@
+# vedox.config.toml — workspace configuration template
+# Copy this file to your workspace root.
+# Do NOT put secrets here — use `vedox keys add` to store them in the keychain.
+
+[server]
+port = 7474
+bind = "127.0.0.1"
+
+[workspace]
+name = "my-workspace"
+default_project = "main"
+
+[repos]
+# Register documentation repos with: vedox repos add
+# Tokens are stored in the OS keychain, not here.
+
+[providers]
+# Configure AI provider integrations.
+# The HMAC key ID is stored here (not the secret).
+# [providers.claude]
+# key_id = "550e8400-e29b-41d4-a716-446655440000"

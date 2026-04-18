@@ -1,0 +1,84 @@
+# Vedox .dockerignore
+#
+# Exclude everything that does not need to be in the build context.
+# The Dockerfile copies specific paths explicitly; this file prevents
+# large or sensitive directories from being sent to the Docker daemon.
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Task / planning files
+.tasks/
+
+# Node modules (re-installed inside the editor-build stage)
+node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+
+# Editor static build output in the source tree (populated by goreleaser
+# before.hooks or by the go-build stage COPY --from=editor-build).
+# Do NOT ignore apps/editor/build here if you are building without goreleaser
+# and relying on a local pre-built output. Comment out the line below in that case.
+apps/editor/build/
+
+# Go embed placeholder (the real assets are copied in during build)
+apps/cli/internal/webassets/editorassets/
+!apps/cli/internal/webassets/editorassets/.gitkeep
+
+# Go build cache / test artifacts
+apps/cli/dist/
+apps/cli/coverage/
+*.test
+*.out
+
+# macOS artifacts
+.DS_Store
+**/.DS_Store
+
+# Secrets — NEVER in the build context
+.env
+.env.*
+secrets/
+*.pem
+*.key
+*.p12
+*.cer
+*.crt
+*.age
+
+# Vedox local state
+.vedox/
+vedox.config.toml
+
+# Developer tooling not needed in the image
+.github/
+.goreleaser.yaml
+Makefile
+dev.sh
+scripts/
+tests/
+docs/
+security/
+
+# Marketing site — not needed for the daemon image
+apps/www/
+
+# Turbo / pnpm caches
+.turbo/
+.pnpm-store/
+
+# Go workspace files (the build stage uses apps/cli directly)
+go.work
+go.work.sum
+
+# IDE / editor configs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and temp files
+*.log
+tmp/

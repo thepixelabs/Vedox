@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -255,8 +256,15 @@ func stringField(m map[string]interface{}, key string) string {
 	if !ok {
 		return ""
 	}
-	s, _ := v.(string)
-	return strings.TrimSpace(s)
+	switch tv := v.(type) {
+	case string:
+		return strings.TrimSpace(tv)
+	case time.Time:
+		// yaml.v3 parses bare YYYY-MM-DD values as time.Time; format back to ISO string.
+		return tv.Format("2006-01-02")
+	default:
+		return ""
+	}
 }
 
 func trailingWhitespaceIssues(path, text string) []LintIssue {

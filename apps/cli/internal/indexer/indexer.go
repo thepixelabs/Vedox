@@ -70,6 +70,27 @@ type Indexer struct {
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
+
+	// runDone is closed when runLoop has fully exited (including drainTimers).
+	// Stop waits on it rather than on a WaitGroup because using wg.Add inside
+	// Start would race with wg.Wait in a caller who calls Stop before Start's
+	// goroutine has had a chance to run. The channel is created in New so it
+	// exists regardless of whether Start is ever called — a Stop-before-Start
+	// caller sees it as a closed-on-its-own pseudo-state by observing
+	// started=false.
+	runDone chan struct{}
+
+	// started is set to true by Start before it enters runLoop. Stop reads it
+	// (under startedMu) to decide whether to wait on runDone or return early.
+	// atomic.Bool would work too; mutex keeps the init-ordering guarantees
+	// easy to reason about.
+	startedMu sync.Mutex
+	started   bool
+
+	// afterFuncWG tracks in-flight debounce AfterFunc callbacks (NOT runLoop).
+	// It is only ever Add()ed from inside runLoop and Wait()ed after runLoop
+	// has exited, so there is no Add/Wait race.
+	afterFuncWG sync.WaitGroup
 }
 
 // New creates an Indexer. workspaceRoot must be a valid, accessible directory.
@@ -97,6 +118,7 @@ func New(s store.DocStore, dbStore *db.Store, workspaceRoot string) *Indexer {
 		timers:        make(map[string]*time.Timer),
 		pending:       make(map[string]fsnotify.Op),
 		stopCh:        make(chan struct{}),
+		runDone:       make(chan struct{}),
 	}
 }
 
@@ -122,27 +144,56 @@ func (ix *Indexer) Start(ctx context.Context) error {
 
 	ix.logger.Info("indexer: started", slog.String("root", ix.workspaceRoot))
 
+	// Mark as started BEFORE runLoop begins so any concurrent Stop() will
+	// correctly wait on runDone instead of returning early.
+	ix.startedMu.Lock()
+	ix.started = true
+	ix.startedMu.Unlock()
+
 	// Run the event loop in this goroutine. The caller put us in a goroutine.
+	// runDone is closed in runLoop's defer after every cleanup step (including
+	// afterFuncWG.Wait), so observing it closed is a strong shutdown signal.
 	ix.runLoop(ctx)
 
 	return nil
 }
 
-// Stop signals the indexer to shut down. Safe to call multiple times.
-// Start's goroutine will return after pending timers are drained.
+// Stop signals the indexer to shut down and blocks until every goroutine it
+// spawned (the runLoop and every in-flight debounce callback) has exited.
+// Safe to call multiple times; subsequent calls return once the first has
+// completed. Safe to call before or without Start — in that case only stopCh
+// is closed and Stop returns immediately because no runLoop was ever entered.
 func (ix *Indexer) Stop() {
 	ix.stopOnce.Do(func() {
 		close(ix.stopCh)
 	})
+
+	// Snapshot started state. If Start never ran there is no runLoop to wait
+	// for; returning now is correct.
+	ix.startedMu.Lock()
+	started := ix.started
+	ix.startedMu.Unlock()
+	if !started {
+		return
+	}
+	<-ix.runDone
 }
 
 // runLoop is the core event dispatch loop. It exits when ctx is done or
 // stopCh is closed, then cleans up.
 func (ix *Indexer) runLoop(ctx context.Context) {
 	defer func() {
+		// Ensure stopCh is closed on every exit path (including ctx
+		// cancellation) so any AfterFunc callback that fires after this point
+		// can see the shutdown signal and bail before touching ix.db.
+		ix.stopOnce.Do(func() { close(ix.stopCh) })
 		_ = ix.watcher.Close()
 		ix.drainTimers()
+		// Wait for any AfterFunc callback that had already fired and was
+		// racing us to complete — drainTimers cannot cancel a running one.
+		ix.afterFuncWG.Wait()
 		ix.logger.Info("indexer: stopped")
+		close(ix.runDone)
 	}()
 
 	for {
@@ -238,13 +289,34 @@ func (ix *Indexer) scheduleDebounce(ctx context.Context, path string, op fsnotif
 		return
 	}
 
-	// First event for this path: arm a new timer.
+	// First event for this path: arm a new timer. Track the pending callback
+	// on afterFuncWG so runLoop's defer can wait for any callback that had
+	// already fired before drainTimers got to it — timer.Stop() does NOT
+	// wait for an already-running AfterFunc goroutine.
+	ix.afterFuncWG.Add(1)
 	t := time.AfterFunc(debounceDuration, func() {
+		defer ix.afterFuncWG.Done()
+
+		// Bail out if shutdown has begun. drainTimers clears any pending
+		// entry we would have read, and skipping the DB write here avoids
+		// touching ix.db after the caller considers the indexer stopped.
+		select {
+		case <-ix.stopCh:
+			return
+		default:
+		}
+
 		ix.mu.Lock()
-		op := ix.pending[path]
+		op, ok := ix.pending[path]
 		delete(ix.timers, path)
 		delete(ix.pending, path)
 		ix.mu.Unlock()
+
+		// If drainTimers raced us and cleared the pending op there is
+		// nothing to do — a zero Op would misroute to upsertDoc.
+		if !ok {
+			return
+		}
 
 		ix.processPath(ctx, path, op)
 	})
@@ -395,11 +467,19 @@ func (ix *Indexer) addDirTree(root string, currentDepth int) error {
 // drainTimers cancels all pending debounce timers at shutdown. We intentionally
 // do NOT flush them — a file written 50ms before shutdown doesn't need to be
 // indexed; the next startup's reindex will catch it.
+//
+// For every timer we successfully cancel before it fires (t.Stop returns
+// true), we must call afterFuncWG.Done to balance the Add done when the timer
+// was armed — the AfterFunc callback's own deferred Done will not run because
+// the callback never executes. If Stop returns false the callback is already
+// running (or about to run) and will Done itself via its deferred call.
 func (ix *Indexer) drainTimers() {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 	for path, t := range ix.timers {
-		t.Stop()
+		if t.Stop() {
+			ix.afterFuncWG.Done()
+		}
 		delete(ix.timers, path)
 	}
 	for path := range ix.pending {

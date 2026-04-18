@@ -1,0 +1,5 @@
+payment:
+  provider: stripe
+  # WARNING: live key — never commit to docs
+  secret_key: sk_live_4eC39HqLyjWDarjtT1zdp7dcXXXXXXXXXX
+  public_key: pk_live_51Hz3kKLkjhgfedcba

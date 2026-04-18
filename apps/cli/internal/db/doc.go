@@ -20,6 +20,7 @@ type Doc struct {
 	ContentHash    string // SHA256 hex of raw file contents
 	ModTime        string // ISO 8601
 	Size           int64
+	WordCount      int    // len(strings.Fields(Body)); 0 until first UpsertDoc (migration 004)
 	RawFrontmatter string // JSON-encoded frontmatter blob
 	Body           string // plain text body used for FTS; not stored in `documents`
 }

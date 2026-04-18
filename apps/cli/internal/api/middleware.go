@@ -9,8 +9,10 @@
 package api
 
 import (
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -23,12 +25,37 @@ var corsAllowedOrigins = map[string]bool{
 	"http://127.0.0.1:5151":  true,
 }
 
+// CSPHeaderValue is the v2.0 Content-Security-Policy mandated by binding
+// ruling E9 (vedox-v2 MASTER_PLAN). It is exported so tests in the api
+// package — and any future renderer that needs to emit a matching
+// <meta http-equiv> in static build output — share a single source of truth.
+//
+// Policy breakdown:
+//
+//	default-src 'self'              fall-through: same-origin only
+//	script-src  'self'              no inline JS, no eval, no remote scripts
+//	style-src   'self' 'unsafe-inline'  REQUIRED by Shiki for syntax highlighting:
+//	                                Shiki's tokenizer emits inline `style="..."`
+//	                                attributes on every <span>. There is no
+//	                                nonce/hash path that works with Shiki's
+//	                                output in a static build (E1 forbids
+//	                                per-request templating in v2.0). The XSS
+//	                                blast radius is bounded because all
+//	                                rendered Markdown is DOMPurify-sanitised
+//	                                upstream and `script-src 'self'` blocks
+//	                                the only meaningful exfiltration path.
+//	                                The v2.1 plan lifts this to nonce-based
+//	                                CSP once the daemon serves templated HTML.
+//	img-src     'self' data:        data: URIs needed for inline diagrams
+//	object-src  'none'              no <object>/<embed>/<applet>
+//	frame-ancestors 'none'          un-iframable; equivalent to X-Frame-Options: DENY
+const CSPHeaderValue = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'"
+
 // securityHeaders applies the security headers mandated by EPIC-001 to every
 // response. This is called from corsMiddleware so the two concerns travel
 // together and neither can be applied without the other.
 func applySecurityHeaders(w http.ResponseWriter) {
-	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; script-src 'none'; object-src 'none'")
+	w.Header().Set("Content-Security-Policy", CSPHeaderValue)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 }
@@ -84,6 +111,53 @@ func corsMiddleware(next http.Handler) http.Handler {
 				_, _ = w.Write([]byte(`{"error":"VDX-403","message":"origin not allowed for mutating request"}`))
 				return
 			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requireBootstrapToken is a chi-compatible middleware (func(http.Handler)
+// http.Handler) that enforces the daemon bootstrap token on the request.
+//
+// The token must be supplied as a Bearer credential in the Authorization header:
+//
+//	Authorization: Bearer <64-hex-char token>
+//
+// Failure modes (fail-closed):
+//   - No token configured on the server   → 401 VDX-401
+//   - Missing or malformed Authorization  → 401 VDX-401
+//   - Token present but wrong value       → 401 VDX-401
+//
+// The comparison is constant-time to prevent timing attacks.
+func (s *Server) requireBootstrapToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Fail-closed: if no token has been configured, every request is
+		// rejected. This prevents accidental open access when the daemon
+		// starts without having called SetBootstrapToken.
+		if s.bootstrapToken == "" {
+			slog.Warn("api: browse auth: no bootstrap token configured — rejecting request",
+				"method", r.Method, "path", r.URL.Path)
+			writeError(w, http.StatusUnauthorized, "VDX-401", "authentication required")
+			return
+		}
+
+		authHeader := r.Header.Get("Authorization")
+		provided := strings.TrimPrefix(authHeader, "Bearer ")
+		if authHeader == "" || provided == authHeader {
+			// Header absent or not a Bearer scheme.
+			slog.Warn("api: browse auth: missing or malformed Authorization header",
+				"method", r.Method, "path", r.URL.Path)
+			writeError(w, http.StatusUnauthorized, "VDX-401", "authentication required")
+			return
+		}
+
+		// Constant-time comparison to prevent timing oracle.
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(s.bootstrapToken)) != 1 {
+			slog.Warn("api: browse auth: token mismatch",
+				"method", r.Method, "path", r.URL.Path)
+			writeError(w, http.StatusUnauthorized, "VDX-401", "authentication required")
+			return
 		}
 
 		next.ServeHTTP(w, r)

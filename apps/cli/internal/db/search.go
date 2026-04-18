@@ -91,13 +91,13 @@ func (s *Store) Search(ctx context.Context, query string, filters SearchFilters)
 func (s *Store) GetDoc(ctx context.Context, id string) (*Doc, error) {
 	row := s.readDB.QueryRowContext(ctx,
 		`SELECT id, project, slug, title, type, status, date, tags, author,
-		        content_hash, mod_time, size, raw_frontmatter
+		        content_hash, mod_time, size, word_count, raw_frontmatter
 		 FROM documents WHERE id = ?`, id)
 	d := &Doc{}
 	var tags sql.NullString
 	var slug sql.NullString
 	err := row.Scan(&d.ID, &d.Project, &slug, &d.Title, &d.Type, &d.Status, &d.Date,
-		&tags, &d.Author, &d.ContentHash, &d.ModTime, &d.Size, &d.RawFrontmatter)
+		&tags, &d.Author, &d.ContentHash, &d.ModTime, &d.Size, &d.WordCount, &d.RawFrontmatter)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

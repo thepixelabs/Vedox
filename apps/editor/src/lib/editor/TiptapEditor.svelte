@@ -49,6 +49,7 @@
   import BubbleToolbar from './BubbleToolbar.svelte';
   import SlashCommandPopover from './SlashCommandPopover.svelte';
   import { readingStore } from '$lib/stores/reading';
+  import VedoxLinkHandler from '$lib/components/preview/VedoxLinkHandler.svelte';
 
   // ---------------------------------------------------------------------------
   // Props
@@ -240,13 +241,16 @@
 </script>
 
 <div class="tiptap-wrapper">
-  <!-- editorEl is the ProseMirror mount point -->
-  <div
-    bind:this={editorEl}
-    class="tiptap-editor"
-    class:tiptap-editor--readonly={readonly}
-    aria-label="Rich text document editor"
-  ></div>
+  <!-- VedoxLinkHandler intercepts vedox:// anchor clicks/hovers from ProseMirror output -->
+  <VedoxLinkHandler>
+    <!-- editorEl is the ProseMirror mount point -->
+    <div
+      bind:this={editorEl}
+      class="tiptap-editor"
+      class:tiptap-editor--readonly={readonly}
+      aria-label="Rich text document editor"
+    ></div>
+  </VedoxLinkHandler>
 
   <!-- Floating bubble toolbar — appears above text selections -->
   {#if bubbleVisible && editor}

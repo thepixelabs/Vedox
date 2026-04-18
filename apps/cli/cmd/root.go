@@ -152,4 +152,5 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(reindexCmd)
 	rootCmd.AddCommand(versionCmd)
+	// completionCmd is registered by its own init() in completion.go.
 }

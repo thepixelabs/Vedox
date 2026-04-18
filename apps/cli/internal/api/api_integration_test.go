@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
 	"github.com/vedox/vedox/internal/api"
 	"github.com/vedox/vedox/internal/db"
@@ -84,7 +85,7 @@ func newTestServer(t *testing.T) *testFixture {
 		jobStore,
 		ai.NewJobStore(3),
 		store.NewProjectRegistry(),
-		nil, // agentauth.PassthroughAuth — tests don't exercise agent auth
+		agentauth.PassthroughAuth(), // tests don't exercise agent auth
 	)
 
 	mux := http.NewServeMux()
