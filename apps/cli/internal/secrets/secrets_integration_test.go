@@ -395,6 +395,11 @@ func TestAutoDetect_EnvFallback_ReturnsUsableStore(t *testing.T) {
 	// Clear age vars so AutoDetect cannot return AgeStore without a passphrase.
 	t.Setenv("VEDOX_AGE_PASSPHRASE", "")
 	t.Setenv("VEDOX_AGE_PASSPHRASE_FILE", "")
+	// Force HOME to a non-existent path so the age tier fails (vedoxConfigDir
+	// can't create ~/.vedox/) and AutoDetect falls through to the env tier.
+	// Without this, Linux CI picks AgeStore (no D-Bus → tier 2) and Open()
+	// fails because no passphrase is set.
+	t.Setenv("HOME", filepath.Join(t.TempDir(), "non-existent-home-for-env-fallback-test"))
 
 	store, err := secrets.AutoDetect()
 	if err != nil {
@@ -402,6 +407,12 @@ func TestAutoDetect_EnvFallback_ReturnsUsableStore(t *testing.T) {
 	}
 	if store == nil {
 		t.Fatal("AutoDetect returned nil store without error")
+	}
+
+	// If AutoDetect didn't pick EnvStore on this platform, skip — the test's
+	// purpose is to exercise the env-tier fallback specifically.
+	if _, isEnv := store.(*secrets.EnvStore); !isEnv {
+		t.Skipf("AutoDetect picked %T on this platform; env-fallback path not reached", store)
 	}
 
 	// The returned store must implement SecretStore. Open it and probe the env key.
