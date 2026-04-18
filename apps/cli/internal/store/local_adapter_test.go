@@ -466,6 +466,7 @@ func TestIsSecretFile(t *testing.T) {
 		name    string
 		blocked bool
 	}{
+		// --- existing blocklist cases (must stay green) ---
 		{".env", true},
 		{"server.pem", true},
 		{"server.key", true},
@@ -477,6 +478,25 @@ func TestIsSecretFile(t *testing.T) {
 		{"config.yaml", false},
 		{"my.env.md", false},     // ".env" pattern doesn't match "my.env.md"
 		{"my_id_rsa.pub", false}, // "id_rsa" exact match only
+
+		// --- draft-variant cases: WS-R hotfix (changelog item 31) ---
+		// A .draft.md suffix must be stripped before the blocklist check so
+		// secret files saved as drafts are still blocked.
+		{".env.draft.md", true},    // core case: bug was here — first-dot strip yielded ".md", not ".env"
+		{".env.draft.md.2", true},  // numbered draft variant
+		{".env.draft", true},       // .draft-only suffix (no .md extension)
+		{"server.pem.draft.md", true},  // pem blocklist entry with draft suffix
+		{"server.key.draft.md", true},  // key blocklist entry with draft suffix
+		{"id_rsa.draft.md", true},      // exact-match entry with draft suffix
+
+		// --- false-positive traps: non-secret files must NOT be blocked ---
+		// A regular doc saved as a draft is fine; it must not be falsely blocked.
+		{"config.draft.md", false},   // "config" is not in the blocklist
+		{"adr-001.draft.md", false},  // normal ADR draft — not a secret file
+		// "secrets.draft.md": "secrets" does not match any blocklist pattern
+		// (blocklist uses ".env", "*.pem", "*.key", "id_rsa", "*.p12", "credentials.json")
+		// so this must be false.
+		{"secrets.draft.md", false},
 	}
 
 	for _, tc := range cases {

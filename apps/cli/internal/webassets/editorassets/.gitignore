@@ -1,0 +1,11 @@
+# editorassets/ is populated at release time by goreleaser's before.hooks step:
+#   cp -r apps/editor/build/* apps/cli/internal/webassets/editorassets/
+#
+# Real assets are NEVER committed. Only .gitkeep and this file are tracked.
+# The //go:build release guard in embed.go references this directory; without
+# real assets present, go build -tags=release will fail (expected in dev/CI).
+
+# Ignore all real build output but keep .gitkeep and this file.
+*
+!.gitkeep
+!.gitignore

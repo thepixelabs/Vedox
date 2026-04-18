@@ -1,9 +1,19 @@
 package ai
 
 import (
+	"bytes"
+	"context"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
+
+// probeTimeout is the per-binary deadline for `--version` probes inside
+// DetectAvailableProviders. Two seconds is long enough for any well-behaved
+// CLI on a loaded machine and short enough that a hung binary (e.g. one that
+// prompts for auth) does not block the caller indefinitely.
+const probeTimeout = 2 * time.Second
 
 // ProviderID is the stable identifier for an AI CLI provider.
 type ProviderID string
@@ -45,15 +55,68 @@ func DetectAvailableProviders() []ProviderInfo {
 		}
 		if path, err := exec.LookPath(def.binary); err == nil {
 			info.Available = true
-			// Best-effort version detection; ignore errors so a CLI that does
-			// not support --version (or exits non-zero) doesn't block the list.
-			if out, err := exec.Command(path, "--version").Output(); err == nil {
-				info.Version = strings.TrimSpace(string(out))
-			}
+			// Best-effort version probe with a hard wall-clock deadline.
+			//
+			// We run the binary in its own process group (Setpgid) so we can
+			// kill all its descendants — not just the top-level process — when
+			// the timeout fires. Without this, a shell-script stub that spawns
+			// `sleep` keeps the stdout pipe alive after the shell is killed,
+			// and Output() blocks until the grandchild finally exits.
+			//
+			// The probe is run in a goroutine so the outer timer can fire a
+			// SIGKILL to the process group and then we just discard the result.
+			// On timeout or any error we leave Version empty; the provider is
+			// still marked Available=true because the binary is on PATH.
+			info.Version = probeVersion(path)
 		}
 		results = append(results, info)
 	}
 	return results
+}
+
+// probeVersion runs `binary --version` with a hard probeTimeout deadline and
+// returns the trimmed stdout output, or an empty string on any error or timeout.
+//
+// The child process is placed in its own process group (SysProcAttr.Setpgid).
+// When the context deadline fires, we send SIGKILL to the entire process group
+// via syscall.Kill(-pgid, SIGKILL). This ensures that shell-script launchers
+// (which spawn child processes such as `sleep`) cannot hold stdout pipes open
+// after the parent has been killed, which would cause Output() to block for the
+// duration of the longest grandchild.
+func probeVersion(binary string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binary, "--version")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Start(); err != nil {
+		return ""
+	}
+
+	// Watch for context cancellation in a goroutine. When the deadline fires,
+	// kill the entire process group so all descendants are reaped immediately
+	// and the stdout pipe is released.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			if cmd.Process != nil {
+				// Negative PID targets the process group.
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			}
+		case <-done:
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(stdout.String())
 }
 
 // providerInvocation describes how a provider CLI is invoked for a one-shot prompt.

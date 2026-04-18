@@ -118,10 +118,41 @@ func (js *JobStore) run(job *GenerationJob, req GenerationRequest) {
 }
 
 // Get returns the GenerationJob for id, or nil if not found.
+//
+// WARNING: the returned pointer aliases the same *GenerationJob that the
+// background run() goroutine mutates under js.mu. Reading fields from the
+// returned pointer without holding js.mu races with run()'s state
+// transitions, which is a data race under -race. Callers that need to read
+// job fields (e.g. HTTP handlers encoding JSON) MUST use Snapshot instead.
+// Get is retained for callers that only need identity comparison or that
+// take js.mu themselves.
 func (js *JobStore) Get(id string) *GenerationJob {
 	js.mu.RLock()
 	defer js.mu.RUnlock()
 	return js.jobs[id]
+}
+
+// Snapshot returns a value copy of the job identified by id. The copy is
+// taken under js.mu so field reads cannot race with run()'s concurrent
+// mutations. Returns (GenerationJob{}, false) if the id is not found.
+//
+// This is the safe accessor for HTTP handlers and any other caller that
+// reads the job fields (Status, Names, Error, ProviderUsed, AccountUsed,
+// DurationMs, CompletedAt) from a goroutine other than run() itself.
+//
+// run() assigns Names and CompletedAt exactly once in its terminal critical
+// section, so the shallow value copy taken here captures a stable view:
+// either pre-terminal (nil slice, nil CompletedAt) or post-terminal
+// (immutable slice, non-nil CompletedAt). Callers must not mutate the
+// returned slice headers.
+func (js *JobStore) Snapshot(id string) (GenerationJob, bool) {
+	js.mu.RLock()
+	defer js.mu.RUnlock()
+	p, ok := js.jobs[id]
+	if !ok {
+		return GenerationJob{}, false
+	}
+	return *p, true
 }
 
 // newAIJobID generates a random 16-byte hex string for use as a job ID.

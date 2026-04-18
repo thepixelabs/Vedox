@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -117,6 +118,22 @@ func (s *Store) Close() error {
 // Path returns the absolute path of the SQLite file.
 func (s *Store) Path() string { return s.dbPath }
 
+// SubmitWrite enqueues a write operation on the single-writer goroutine and
+// blocks until it completes. fn runs inside an open *sql.Tx; return an error
+// to roll back, return nil to commit.
+//
+// External packages (e.g. docgraph) must use this method rather than opening
+// their own connections so that all writes are serialised through one funnel,
+// as required by the CTO architectural ruling.
+func (s *Store) SubmitWrite(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	return s.writer.submit(ctx, fn)
+}
+
+// ReadDB returns the read-only *sql.DB connection pool. External packages may
+// issue SELECT queries directly; writes through this handle will fail (the
+// connection is opened with query_only=ON).
+func (s *Store) ReadDB() *sql.DB { return s.readDB }
+
 // ------------------------------------------------------------------
 // Write operations — all route through the single writer goroutine.
 // ------------------------------------------------------------------
@@ -143,6 +160,12 @@ func (s *Store) UpsertDoc(ctx context.Context, doc *Doc) error {
 	if err != nil {
 		return fmt.Errorf("vedox: marshal tags: %w", err)
 	}
+	// Compute word count from the body. strings.Fields splits on any
+	// Unicode whitespace, matching what a human would count. This is
+	// O(len(body)) on the write path; acceptable given the writer
+	// goroutine already does comparable work for FTS population.
+	wordCount := len(strings.Fields(doc.Body))
+
 	return s.writer.submit(ctx, func(tx *sql.Tx) error {
 		var slugArg any
 		if doc.Slug != "" {
@@ -153,8 +176,8 @@ func (s *Store) UpsertDoc(ctx context.Context, doc *Doc) error {
 		_, err := tx.Exec(
 			`INSERT INTO documents(
 				id, project, slug, title, type, status, date, tags, author,
-				content_hash, mod_time, size, raw_frontmatter
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				content_hash, mod_time, size, word_count, raw_frontmatter
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				project         = excluded.project,
 				slug            = excluded.slug,
@@ -167,10 +190,11 @@ func (s *Store) UpsertDoc(ctx context.Context, doc *Doc) error {
 				content_hash    = excluded.content_hash,
 				mod_time        = excluded.mod_time,
 				size            = excluded.size,
+				word_count      = excluded.word_count,
 				raw_frontmatter = excluded.raw_frontmatter`,
 			doc.ID, doc.Project, slugArg, doc.Title, doc.Type, doc.Status, doc.Date,
 			string(tagsJSON), doc.Author, doc.ContentHash, doc.ModTime,
-			doc.Size, doc.RawFrontmatter,
+			doc.Size, wordCount, doc.RawFrontmatter,
 		)
 		if err != nil {
 			return fmt.Errorf("upsert documents: %w", err)

@@ -271,11 +271,49 @@ func Import(
 	return result, nil
 }
 
+// stripDraftSuffixes removes draft-variant suffixes from a filename so the
+// residual basename can be compared against the secret blocklist.
+// Mirrors store.stripDraftSuffixes — kept in sync manually per the deliberate
+// design choice to not export internal store helpers (see package importer doc).
+//
+// Recognised suffixes (longest match wins, applied once):
+//   - ".draft.md.<N>"  — numbered draft (e.g. ".env.draft.md.2")
+//   - ".draft.md"      — standard draft (e.g. ".env.draft.md")
+//   - ".draft"         — draft without .md extension (e.g. ".env.draft")
+func stripDraftSuffixes(name string) string {
+	const draftMD = ".draft.md"
+	if idx := strings.LastIndex(name, draftMD+"."); idx >= 0 {
+		tail := name[idx+len(draftMD)+1:]
+		allDigits := len(tail) > 0
+		for _, ch := range tail {
+			if ch < '0' || ch > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			return name[:idx]
+		}
+	}
+	if strings.HasSuffix(name, draftMD) {
+		return strings.TrimSuffix(name, draftMD)
+	}
+	if strings.HasSuffix(name, ".draft") {
+		return strings.TrimSuffix(name, ".draft")
+	}
+	return name
+}
+
 // isSecretFile reports whether the given base filename matches any pattern in
 // the secret blocklist. Mirrors LocalAdapter.isSecretFile.
+//
+// Draft-variant suffixes (.draft.md, .draft.md.<N>, .draft) are stripped
+// before the blocklist check (FINAL_PLAN changelog item 31).
 func isSecretFile(name string) bool {
+	stripped := stripDraftSuffixes(name)
+
 	for _, pattern := range secretBlocklist {
-		matched, err := filepath.Match(pattern, name)
+		matched, err := filepath.Match(pattern, stripped)
 		if err != nil {
 			// Malformed pattern — fail safe by treating as a match.
 			return true

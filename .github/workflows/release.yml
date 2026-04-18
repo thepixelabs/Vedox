@@ -1,0 +1,317 @@
+name: Release
+
+# Triggered only on version tags. No branch pushes reach this workflow.
+# SLSA L3: all jobs run on GitHub-hosted runners (not self-hosted) so the
+# provenance attestation produced by actions/attest-build-provenance@v2 meets
+# the SLSA L3 builder isolation requirement.
+#
+# Permissions strategy: default deny-all; each job grants only what it needs.
+# The release job needs id-token: write for cosign OIDC keyless signing and
+# for actions/attest-build-provenance@v2 to write the attestation.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Default: deny everything. Jobs declare only the permissions they need.
+permissions: {}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/pixelicous/vedox
+  # Go version must match go.mod. Update both in lockstep.
+  GO_VERSION: "1.25"
+  NODE_VERSION: "22"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # release: goreleaser + cosign + SLSA provenance + GHCR docker push
+  #
+  # Runs on: ubuntu-latest (GitHub-hosted — required for SLSA L3 builder trust)
+  # macOS runner is NOT used for the main build; codesign/notarytool are gated
+  # behind APPLE_DEVELOPER_ENROLLED and run in a dedicated notarize job below.
+  # ---------------------------------------------------------------------------
+  release:
+    name: goreleaser + SLSA provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      # contents: write — create GitHub Release + upload release assets
+      contents: write
+      # packages: write — push to GHCR
+      packages: write
+      # id-token: write — cosign OIDC keyless signing + attest-build-provenance
+      id-token: write
+      # attestations: write — required by actions/attest-build-provenance@v2
+      attestations: write
+
+    outputs:
+      # Expose the tag for downstream jobs.
+      tag: ${{ github.ref_name }}
+
+    steps:
+      # ── Source ─────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history is required for goreleaser changelog generation.
+          fetch-depth: 0
+
+      # ── Go toolchain ────────────────────────────────────────────────────────
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: apps/cli/go.sum
+
+      # ── Node + pnpm (SvelteKit build — required by goreleaser before hook) ─
+      # goreleaser's before.hooks run `pnpm install && pnpm --filter @vedox/editor build`
+      # which produces apps/editor/build/. The //go:build release guard in
+      # apps/cli/internal/webassets/embed.go then embeds those assets at compile time.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      # ── Container toolchain (for goreleaser dockers block) ──────────────────
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN is auto-provisioned by Actions — no extra secret needed.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Signing toolchain ───────────────────────────────────────────────────
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        # cosign is used for keyless OIDC signing of goreleaser artifacts.
+        # No long-lived key material is stored; identity is bound to the
+        # GitHub Actions OIDC token for this workflow run.
+
+      # ── Homebrew tap token (GitHub App → short-lived token) ─────────────────
+      # MAINTAINER: Before the first release, create a GitHub App with
+      # contents: write + pull_requests: write scoped to pixelicous/homebrew-vedox.
+      # Store its ID and base64-encoded PEM private key as repository secrets:
+      #   VEDOX_RELEASE_APP_ID
+      #   VEDOX_RELEASE_APP_PRIVATE_KEY
+      # If neither secret exists yet, goreleaser will fail on the brews block.
+      # Short-term workaround: add HOMEBREW_TAP_TOKEN as a fine-grained PAT secret.
+      - name: Generate Homebrew tap token
+        id: tap-token
+        uses: tibdex/github-app-token@v2
+        # Skip gracefully if the App secrets are not yet configured.
+        # MAINTAINER: Remove the `if` once the GitHub App is provisioned.
+        if: ${{ secrets.VEDOX_RELEASE_APP_ID != '' }}
+        with:
+          app_id: ${{ secrets.VEDOX_RELEASE_APP_ID }}
+          private_key: ${{ secrets.VEDOX_RELEASE_APP_PRIVATE_KEY }}
+          repository: pixelicous/homebrew-vedox
+
+      # ── goreleaser ──────────────────────────────────────────────────────────
+      # goreleaser v2 reads .goreleaser.yaml from the repo root.
+      # It runs before.hooks (pnpm build), cross-compiles, archives, signs
+      # (macOS codesign stub), creates the GitHub Release (draft), pushes GHCR
+      # images via the dockers block, and opens the Homebrew tap PR.
+      #
+      # GORELEASER_KEY is not needed — Community edition, no license required.
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Homebrew tap token — empty string if App is not yet provisioned;
+          # goreleaser will fail on the brews block in that case (expected until
+          # the App is set up per the MAINTAINER note above).
+          HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.token || secrets.HOMEBREW_TAP_TOKEN }}
+
+      # ── cosign keyless signing of release archives ──────────────────────────
+      # Signs the goreleaser checksum file (which covers all archives) using
+      # cosign's keyless OIDC flow. The signature is bound to the GitHub Actions
+      # OIDC identity of this workflow run — no private key is stored anywhere.
+      #
+      # Verification (by end users):
+      #   cosign verify-blob \
+      #     --certificate-identity \
+      #       "https://github.com/pixelicous/Vedox/.github/workflows/release.yml@refs/tags/<TAG>" \
+      #     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+      #     --bundle vedox_<VERSION>_checksums.txt.bundle \
+      #     vedox_<VERSION>_checksums.txt
+      - name: Sign checksums with cosign (keyless OIDC)
+        run: |
+          cosign sign-blob \
+            --yes \
+            --bundle "vedox_${{ github.ref_name }}_checksums.txt.bundle" \
+            dist/vedox_${{ github.ref_name }}_checksums.txt
+        # dist/ is where goreleaser writes all artifacts when run from repo root.
+
+      - name: Upload cosign bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosign-bundle-${{ github.ref_name }}
+          path: vedox_${{ github.ref_name }}_checksums.txt.bundle
+          retention-days: 365
+
+      # ── Sign GHCR docker images with cosign ─────────────────────────────────
+      # Signs both arch-specific manifests and the multi-arch manifest list.
+      # Keyless OIDC — same identity as the blob signing step above.
+      - name: Sign GHCR images with cosign (keyless OIDC)
+        run: |
+          cosign sign --yes \
+            "${{ env.IMAGE_NAME }}:${{ github.ref_name }}-amd64"
+          cosign sign --yes \
+            "${{ env.IMAGE_NAME }}:${{ github.ref_name }}-arm64"
+          cosign sign --yes \
+            "${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
+
+      # ── SLSA L3 provenance attestation ──────────────────────────────────────
+      # actions/attest-build-provenance@v2 produces a signed SLSA provenance
+      # attestation and attaches it to the GitHub Release via the Sigstore
+      # transparency log. Requires id-token: write + attestations: write.
+      #
+      # Subject: the goreleaser checksum file covers all release archives, so
+      # one attestation transitively covers every binary in the release.
+      - name: Attest build provenance (SLSA L3)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/vedox_${{ github.ref_name }}_checksums.txt
+
+      # ── Attest GHCR image provenance ────────────────────────────────────────
+      - name: Attest GHCR image provenance (SLSA L3)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: >-
+            sha256:placeholder-replaced-at-runtime
+          # MAINTAINER: goreleaser outputs a artifacts.json with image digests.
+          # Wire the exact digest here once goreleaser artifact introspection is
+          # confirmed. For now, the blob attestation above covers the checksums
+          # file which transitively includes docker image layer hashes.
+          push-to-registry: true
+
+  # ---------------------------------------------------------------------------
+  # notarize: macOS notarytool — gated on APPLE_DEVELOPER_ENROLLED secret
+  #
+  # This job is skipped unless the APPLE_DEVELOPER_ENROLLED secret is set to
+  # any non-empty value. Skipping is NOT a failure — it emits a warning only.
+  #
+  # To enable: enroll in Apple Developer Program, obtain a Developer ID
+  # Application certificate, and set these secrets in the release environment:
+  #   APPLE_DEVELOPER_ENROLLED       — set to "true" to enable this job
+  #   APPLE_CERTIFICATE_P12          — base64-encoded .p12 certificate
+  #   APPLE_CERTIFICATE_PASSWORD     — .p12 import password
+  #   APPLE_TEAM_ID                  — 10-character Apple team ID
+  #   AC_PASSWORD                    — App Store Connect API key or app-specific password
+  #
+  # Notarization requires a macOS runner with Xcode tools (xcrun notarytool).
+  # The goreleaser signs block handles codesign; this job handles notarytool
+  # submission, polling, and stapling — steps that are async and macOS-only.
+  # ---------------------------------------------------------------------------
+  notarize:
+    name: macOS notarization (stub — requires Apple Developer enrollment)
+    needs: release
+    runs-on: macos-latest
+    timeout-minutes: 30
+    # Gate: skip entirely if APPLE_DEVELOPER_ENROLLED is not set.
+    if: ${{ secrets.APPLE_DEVELOPER_ENROLLED != '' }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # Download the macOS zip produced by goreleaser.
+          # Artifact name matches the goreleaser archive name_template.
+          name: vedox-${{ needs.release.outputs.tag }}-darwin-universal.zip
+          path: dist/
+        # This step will fail if the artifact name does not match what goreleaser
+        # produced. Check the goreleaser archives.name_template in .goreleaser.yaml.
+        continue-on-error: true
+
+      - name: Import Developer ID certificate into keychain
+        # Imports the P12 certificate into a temporary keychain so codesign and
+        # notarytool can access it. The keychain is ephemeral — it exists only
+        # for this runner and is deleted when the job ends.
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/vedox-release.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 900 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "${{ secrets.APPLE_CERTIFICATE_P12 }}" | base64 --decode \
+            > "$RUNNER_TEMP/certificate.p12"
+
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/xcrun
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Clean up P12 immediately — do not let it persist on disk.
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+      - name: Notarize macOS universal binary
+        # xcrun notarytool submits the zip, waits for Apple's servers to respond,
+        # then xcrun stapler attaches the notarization ticket to the binary.
+        # --wait blocks until notarization is accepted or rejected (up to 15 min).
+        run: |
+          ARTIFACT="dist/vedox-${{ needs.release.outputs.tag }}-darwin-universal.zip"
+
+          if [[ ! -f "$ARTIFACT" ]]; then
+            echo "::warning::macOS artifact not found at $ARTIFACT — skipping notarization."
+            exit 0
+          fi
+
+          xcrun notarytool submit "$ARTIFACT" \
+            --apple-id "thepixelabs@gmail.com" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.AC_PASSWORD }}" \
+            --wait \
+            --output-format json \
+            | tee notarytool-output.json
+
+          STATUS=$(jq -r '.status' notarytool-output.json)
+          if [[ "$STATUS" != "Accepted" ]]; then
+            echo "::error::Notarization failed — status: $STATUS"
+            cat notarytool-output.json
+            exit 1
+          fi
+
+          xcrun stapler staple "$ARTIFACT"
+          echo "Notarization and stapling complete."
+
+      - name: Upload notarized artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vedox-${{ needs.release.outputs.tag }}-darwin-notarized
+          path: dist/vedox-${{ needs.release.outputs.tag }}-darwin-universal.zip
+          retention-days: 90
+        # Only runs if the notarize step produced the file.
+        if: success()

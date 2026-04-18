@@ -29,12 +29,23 @@ type dirEntry struct {
 // It returns a list of subdirectories for the given path. This is used by the
 // frontend to implement a folder picker for importing or linking projects.
 //
+// Authentication: the bootstrap token must be supplied as
+//
+//	Authorization: Bearer <token>
+//
+// (enforced by the requireBootstrapToken middleware wired in server.go Mount).
+//
 // Query parameters:
-//   path: absolute path to list. If empty, defaults to the user's home directory
-//         on macOS/Linux or the current drive root on Windows.
+//
+//	path: absolute path to list. If empty, defaults to the user's home directory
+//	      on macOS/Linux or the current drive root on Windows.
 //
 // Errors:
-//   VDX-102: The path is not a directory or could not be read.
+//
+//	VDX-401: No valid bootstrap token supplied (handled by middleware, not here).
+//	VDX-403: Requested path is outside $HOME.
+//	VDX-100: Path could not be resolved to an absolute path.
+//	VDX-102: The path is not a directory or could not be read.
 func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSpace(r.URL.Query().Get("path"))
 
@@ -57,6 +68,32 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Home-directory boundary check (CRIT-02 / FIX-SEC-01 / MED-02).
+	// Reject any path that escapes $HOME so that an authenticated caller
+	// (e.g. a compromised frontend) cannot enumerate /etc, /proc, or other
+	// sensitive directories. withinHomeDir uses filepath.Clean on both paths
+	// to defeat double-dot traversal before the HasPrefix comparison.
+	//
+	// Symlink-escape guard (re-audit #2): filepath.Abs does NOT resolve
+	// symlinks, so a user-owned symlink inside $HOME that points outside it
+	// (e.g. ~/escape -> /etc) would pass the prefix check but os.ReadDir
+	// would then follow the symlink and enumerate the target. We resolve
+	// the real path here and re-check the boundary before touching the
+	// filesystem. EvalSymlinks fails when the path does not exist; in that
+	// case we fall back to the abs comparison (which is still safe because
+	// a non-existent path cannot contain a symlink).
+	if !withinHomeDir(abs) {
+		writeError(w, http.StatusForbidden, "VDX-403", "path is outside the allowed home directory boundary")
+		return
+	}
+	if real, serr := filepath.EvalSymlinks(abs); serr == nil {
+		if !withinHomeDir(real) {
+			writeError(w, http.StatusForbidden, "VDX-403", "path is outside the allowed home directory boundary")
+			return
+		}
+		abs = real
+	}
+
 	entries, err := os.ReadDir(abs)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -65,7 +102,10 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		} else if os.IsNotExist(err) {
 			status = http.StatusNotFound
 		}
-		writeError(w, status, "VDX-102", "could not read directory: "+err.Error())
+		// MED-02 fix: strip the absolute path from the error message so that
+		// the OS-level error (which embeds abs) is not leaked to the client.
+		// The operator can correlate via the structured log entry.
+		writeError(w, status, "VDX-102", "could not read directory")
 		return
 	}
 

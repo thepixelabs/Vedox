@@ -40,6 +40,8 @@
     loadState = "loading";
     try {
       docs = await api.getProjectDocs(projectId);
+      // Populate the store with enriched DocEntry (type + folder derived).
+      projectsStore.setProjectDocs(projectId, docs);
       loadState = "done";
     } catch (err) {
       loadState = "error";
