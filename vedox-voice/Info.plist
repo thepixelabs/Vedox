@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist — VedoxVoice
+
+  Required for macOS to display a system permission dialog when the binary
+  first accesses the microphone.  Without NSMicrophoneUsageDescription the
+  binary will be terminated by TCC with a "killed: 9" exit before
+  AVAudioEngine.start() can complete.
+
+  This file is referenced at codesign time via the --info-plist flag or
+  embedded via xcodebuild.  For swiftc/SPM builds without Xcode, embed it
+  manually:
+
+    /usr/libexec/PlistBuddy -c "Merge Info.plist" \
+      .build/release/VedoxVoice
+
+  Then re-sign with the entitlements.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>VedoxVoice</string>
+
+  <key>CFBundleIdentifier</key>
+  <string>net.pixelabs.vedox.voice</string>
+
+  <key>CFBundleVersion</key>
+  <string>1</string>
+
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+
+  <key>CFBundleExecutable</key>
+  <string>VedoxVoice</string>
+
+  <key>CFBundlePackageType</key>
+  <string>TOOL</string>
+
+  <!--
+    Required by TCC for microphone access.
+    The string is shown in the macOS permission dialog.
+  -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>VedoxVoice captures microphone audio while push-to-talk is active to enable voice commands in the Vedox documentation editor.</string>
+
+  <!--
+    Minimum macOS deployment target — must match Package.swift.
+  -->
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+
+  <!--
+    LSUIElement = true makes the binary a background agent:
+    no Dock icon, no menu bar, no application menu.
+    It still participates in the NSApplication run loop (required for
+    NSEvent global monitors).
+  -->
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>
