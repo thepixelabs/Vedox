@@ -69,6 +69,8 @@ export default defineConfig({
       { find: /^\$lib$/,        replacement: path.resolve(here, 'src/lib') },
       { find: /^\$styles\/(.*)$/, replacement: path.resolve(here, 'src/styles') + '/$1' },
       { find: '$app/environment', replacement: path.resolve(here, 'src/test-stubs/app-environment.ts') },
+      { find: '$app/stores',     replacement: path.resolve(here, 'src/test-stubs/app-stores.ts') },
+      { find: '$app/navigation', replacement: path.resolve(here, 'src/test-stubs/app-navigation.ts') },
     ],
     // Required so Vitest can resolve .svelte files from test files.
     conditions: ['browser', 'import', 'module', 'default']
