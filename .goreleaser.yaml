@@ -159,9 +159,13 @@ archives:
         format: tar.gz
 
     # Archive name template. Produces e.g.:
-    #   vedox-v2.0.0-linux-amd64.tar.gz
-    #   vedox-v2.0.0-darwin-universal.zip (after lipo merge)
-    name_template: "vedox-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    #   vedox-2.0.0-linux-amd64.tar.gz
+    #   vedox-2.0.0-darwin-universal.zip (after lipo merge)
+    # The macOS universal binary's goarch is 'all'; we rename it to 'universal'
+    # so the published filename is human-meaningful and matches what the
+    # notarize job + Homebrew Cask + install.sh look for.
+    name_template: >-
+      vedox-{{ .Version }}-{{ .Os }}-{{ if eq .Arch "all" }}universal{{ else }}{{ .Arch }}{{ end }}
 
     # Files to include in the archive alongside the binary.
     files:

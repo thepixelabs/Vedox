@@ -262,22 +262,27 @@ jobs:
       # Bind secret to env so we can gate individual steps.
       # (GitHub Actions forbids `secrets.*` inside job/step `if:` conditions.)
       APPLE_DEVELOPER_ENROLLED: ${{ secrets.APPLE_DEVELOPER_ENROLLED }}
+      VERSION: ${{ needs.release.outputs.version }}
+      ARCHIVE: vedox-${{ needs.release.outputs.version }}-darwin-universal.zip
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download release artifacts
+      # Download the goreleaser-produced darwin universal zip from the
+      # GitHub Release (it's a release asset, not a workflow artifact).
+      # The release is created as a draft by goreleaser; gh release download
+      # works on drafts.
+      - name: Download macOS universal zip from draft release
         if: env.APPLE_DEVELOPER_ENROLLED != ''
-        uses: actions/download-artifact@v4
-        with:
-          # Download the macOS zip produced by goreleaser.
-          # Artifact name matches the goreleaser archive name_template.
-          name: vedox-${{ needs.release.outputs.version }}-darwin-universal.zip
-          path: dist/
-        # This step will fail if the artifact name does not match what goreleaser
-        # produced. Check the goreleaser archives.name_template in .goreleaser.yaml.
-        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "${ARCHIVE}" \
+            --dir dist/
 
       - name: Import Developer ID certificate into keychain
         if: env.APPLE_DEVELOPER_ENROLLED != ''
@@ -320,18 +325,42 @@ jobs:
             <<< "${{ secrets.APPLE_API_KEY_P8 }}"
           chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
 
+      - name: Codesign macOS universal binary
+        if: env.APPLE_DEVELOPER_ENROLLED != ''
+        # Apple requires hardened-runtime + secure-timestamp codesign BEFORE
+        # notarization. We unzip the goreleaser archive, sign the bare binary,
+        # and re-zip in the form notarytool expects (top-level binary in zip).
+        run: |
+          ARTIFACT="dist/${ARCHIVE}"
+          WORKDIR="$RUNNER_TEMP/codesign"
+          mkdir -p "$WORKDIR"
+          unzip -o "$ARTIFACT" -d "$WORKDIR"
+
+          # The archive contains the bare 'vedox' binary (and LICENSE/README).
+          codesign --force \
+            --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
+            --options runtime \
+            --timestamp \
+            "$WORKDIR/vedox"
+
+          codesign --verify --strict --verbose=2 "$WORKDIR/vedox"
+
+          # Re-zip with the same filename so notarytool + stapler operate on
+          # an updated archive containing the signed binary.
+          rm -f "$ARTIFACT"
+          (cd "$WORKDIR" && zip -r "$OLDPWD/$ARTIFACT" .)
+
       - name: Notarize macOS universal binary
         if: env.APPLE_DEVELOPER_ENROLLED != ''
         # xcrun notarytool submits the zip, waits for Apple's servers to respond,
         # then xcrun stapler attaches the notarization ticket to the binary.
         # --wait blocks until notarization is accepted or rejected (up to 15 min).
+        # Stapling a zip itself isn't supported — we staple the binary, then
+        # re-zip so the published asset includes the ticket.
         run: |
-          ARTIFACT="dist/vedox-${{ needs.release.outputs.version }}-darwin-universal.zip"
-
-          if [[ ! -f "$ARTIFACT" ]]; then
-            echo "::warning::macOS artifact not found at $ARTIFACT — skipping notarization."
-            exit 0
-          fi
+          ARTIFACT="dist/${ARCHIVE}"
+          WORKDIR="$RUNNER_TEMP/notarize"
+          mkdir -p "$WORKDIR"
 
           xcrun notarytool submit "$ARTIFACT" \
             --key ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8 \
@@ -348,14 +377,21 @@ jobs:
             exit 1
           fi
 
-          xcrun stapler staple "$ARTIFACT"
-          echo "Notarization and stapling complete."
+          # Stapler doesn't operate on .zip — extract, staple binary, re-zip.
+          unzip -o "$ARTIFACT" -d "$WORKDIR"
+          xcrun stapler staple "$WORKDIR/vedox" || \
+            echo "::warning::stapler reported an issue (often benign for CLI binaries — Gatekeeper still validates online)."
 
-      - name: Upload notarized artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vedox-${{ needs.release.outputs.version }}-darwin-notarized
-          path: dist/vedox-${{ needs.release.outputs.version }}-darwin-universal.zip
-          retention-days: 90
-        # Only runs if the notarize step produced the file.
-        if: success()
+          rm -f "$ARTIFACT"
+          (cd "$WORKDIR" && zip -r "$OLDPWD/$ARTIFACT" .)
+          echo "Notarization complete."
+
+      - name: Replace release asset with notarized zip
+        if: env.APPLE_DEVELOPER_ENROLLED != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            "dist/${ARCHIVE}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
