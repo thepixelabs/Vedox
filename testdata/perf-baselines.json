@@ -1,0 +1,92 @@
+{
+  "_meta": {
+    "generated": "2026-04-17",
+    "platform": "darwin/arm64",
+    "cpu": "Apple M1 Pro",
+    "go_version": "1.25.0",
+    "tolerance_pct": 20,
+    "note": "Baselines captured with -benchtime=5s on a quiet local machine. Values will differ on shared CI runners; this file is intentionally NOT used in CI (see tests/perf/README.md)."
+  },
+  "benchmarks": [
+    {
+      "name": "BenchmarkScanSmallFile",
+      "package": "github.com/vedox/vedox/internal/secretscan",
+      "ns_op": 268808,
+      "ns_op_max": 322570,
+      "allocs_op": 18,
+      "allocs_op_max": 22,
+      "bytes_op": 1054723,
+      "bytes_op_max": 1265668
+    },
+    {
+      "name": "BenchmarkScanLargeFile",
+      "package": "github.com/vedox/vedox/internal/secretscan",
+      "ns_op": 166179019,
+      "ns_op_max": 199414823,
+      "allocs_op": 14981,
+      "allocs_op_max": 17977,
+      "bytes_op": 2277054,
+      "bytes_op_max": 2732465
+    },
+    {
+      "name": "BenchmarkGatePreCommit_100Files",
+      "package": "github.com/vedox/vedox/internal/secretscan",
+      "ns_op": 51056884,
+      "ns_op_max": 61268261,
+      "allocs_op": 238219,
+      "allocs_op_max": 285863,
+      "bytes_op": 37339739,
+      "bytes_op_max": 44807687
+    },
+    {
+      "name": "BenchmarkExtractor_TypicalDoc",
+      "package": "github.com/vedox/vedox/internal/docgraph",
+      "ns_op": 54788,
+      "ns_op_max": 65746,
+      "allocs_op": 482,
+      "allocs_op_max": 578,
+      "bytes_op": 66591,
+      "bytes_op_max": 79909
+    },
+    {
+      "name": "BenchmarkSaveRefs_HotPath",
+      "package": "github.com/vedox/vedox/internal/docgraph",
+      "ns_op": 291531,
+      "ns_op_max": 349837,
+      "allocs_op": 345,
+      "allocs_op_max": 414,
+      "bytes_op": 12108,
+      "bytes_op_max": 14530
+    },
+    {
+      "name": "BenchmarkDiffDocs_TypicalEdit",
+      "package": "github.com/vedox/vedox/internal/history",
+      "ns_op": 10730,
+      "ns_op_max": 12876,
+      "allocs_op": 54,
+      "allocs_op_max": 65,
+      "bytes_op": 23054,
+      "bytes_op_max": 27665
+    },
+    {
+      "name": "BenchmarkHandleHealthz",
+      "package": "github.com/vedox/vedox/internal/api",
+      "ns_op": 837,
+      "ns_op_max": 1004,
+      "allocs_op": 14,
+      "allocs_op_max": 17,
+      "bytes_op": 1424,
+      "bytes_op_max": 1709
+    },
+    {
+      "name": "BenchmarkHandleGraph_Empty",
+      "package": "github.com/vedox/vedox/internal/api",
+      "ns_op": 21537,
+      "ns_op_max": 25844,
+      "allocs_op": 32,
+      "allocs_op_max": 38,
+      "bytes_op": 2113,
+      "bytes_op_max": 2536
+    }
+  ]
+}
