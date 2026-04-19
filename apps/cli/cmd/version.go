@@ -22,6 +22,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print the Vedox CLI version",
 	// Use Run (not RunE) — this command cannot fail.
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("vedox %s (commit %s, built %s)\n", version, commit, buildDate)
+		// Use cobra's writer (cmd.OutOrStdout) so tests can capture output via SetOut.
+		fmt.Fprintf(cmd.OutOrStdout(), "vedox %s (commit %s, built %s)\n", version, commit, buildDate)
 	},
 }
