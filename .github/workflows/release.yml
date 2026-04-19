@@ -216,8 +216,8 @@ jobs:
   # To enable: enroll in Apple Developer Program, obtain a Developer ID
   # Application certificate, and set these secrets in the release environment:
   #   APPLE_DEVELOPER_ENROLLED       — set to "true" to enable this job
-  #   APPLE_CERTIFICATE_P12          — base64-encoded .p12 certificate
-  #   APPLE_CERTIFICATE_PASSWORD     — .p12 import password
+  #   APPLE_CERT_P12          — base64-encoded .p12 certificate
+  #   APPLE_CERT_PASSWORD     — .p12 import password
   #   APPLE_TEAM_ID                  — 10-character Apple team ID
   #   AC_PASSWORD                    — App Store Connect API key or app-specific password
   #
@@ -263,12 +263,12 @@ jobs:
           security set-keychain-settings -lut 900 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          echo "${{ secrets.APPLE_CERTIFICATE_P12 }}" | base64 --decode \
+          echo "${{ secrets.APPLE_CERT_P12 }}" | base64 --decode \
             > "$RUNNER_TEMP/certificate.p12"
 
           security import "$RUNNER_TEMP/certificate.p12" \
             -k "$KEYCHAIN_PATH" \
-            -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" \
+            -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
             -T /usr/bin/codesign \
             -T /usr/bin/xcrun
 
@@ -279,6 +279,16 @@ jobs:
 
           # Clean up P12 immediately — do not let it persist on disk.
           rm -f "$RUNNER_TEMP/certificate.p12"
+
+      - name: Write App Store Connect API key
+        # notarytool accepts an API key (.p8 file) instead of an Apple ID password.
+        # API-key auth is the Pixelabs-wide convention (dispatch, kubecat, uplnk):
+        # no app-specific password needed, no 2FA prompts, and keys are scoped.
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          cat > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8 \
+            <<< "${{ secrets.APPLE_API_KEY_P8 }}"
+          chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
 
       - name: Notarize macOS universal binary
         # xcrun notarytool submits the zip, waits for Apple's servers to respond,
@@ -293,9 +303,9 @@ jobs:
           fi
 
           xcrun notarytool submit "$ARTIFACT" \
-            --apple-id "thepixelabs@gmail.com" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
-            --password "${{ secrets.AC_PASSWORD }}" \
+            --key ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8 \
+            --key-id "${{ secrets.APPLE_API_KEY_ID }}" \
+            --issuer "${{ secrets.APPLE_API_ISSUER_ID }}" \
             --wait \
             --output-format json \
             | tee notarytool-output.json
