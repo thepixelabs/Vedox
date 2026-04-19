@@ -7,6 +7,7 @@ require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/betterleaks/betterleaks v1.1.2
 	github.com/fsnotify/fsnotify v1.8.0
+	github.com/ggerganov/whisper.cpp/bindings/go v0.0.0-20260417113627-166c20b473d5
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
