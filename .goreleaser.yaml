@@ -180,63 +180,23 @@ checksum:
   algorithm: sha256
 
 # ---------------------------------------------------------------------------
-# Signs: macOS codesign (stub — notarization pipeline lands Week 9)
+# Signs: codesign runs in the dedicated notarize job, NOT here.
 #
-# MAINTAINER: This block wires the codesign call for the macOS universal
-# binary. The actual signing certificate (Developer ID Application) must be
-# imported into the macOS runner's keychain before goreleaser runs.
-# The release.yml workflow handles keychain setup — see the import step
-# in the workflow (APPLE_CERTIFICATE_P12 secret).
+# The release job runs on ubuntu-latest (required for SLSA L3 builder trust
+# and fast cross-compile). codesign is only available on macOS, so invoking
+# it from goreleaser on Linux would fail with 'executable file not found'.
 #
-# Placeholders:
-#   <TEAM_ID>         → fill with ${{ secrets.APPLE_TEAM_ID }} in release.yml
-#   <APPLE_ID_EMAIL>  → thepixelabs@gmail.com (OV-5 correction, confirmed)
-#   <AC_PASSWORD>     → fill with ${{ secrets.AC_PASSWORD }} in release.yml
+# The notarize job in .github/workflows/release.yml:
+#   1. runs-on: macos-latest
+#   2. downloads the darwin-universal artifact
+#   3. imports the Developer ID Application cert into an ephemeral keychain
+#   4. runs codesign (hardened runtime + timestamp)
+#   5. submits to notarytool with the App Store Connect API key
+#   6. staples the ticket and re-uploads
 #
-# Week 9 task: wire notarytool into this block or into a post-goreleaser
-# step in release.yml. notarytool requires xcrun (macOS runner only).
-#
-# SLSA L3 provenance is NOT handled here — it is produced by
-# actions/attest-build-provenance@v2 in the release.yml workflow after
-# goreleaser finishes. See changelog item 12 and the release workflow stub.
+# SLSA L3 provenance is produced by actions/attest-build-provenance@v2 in
+# release.yml after goreleaser finishes.
 # ---------------------------------------------------------------------------
-signs:
-  - id: macos-codesign
-    # Only sign darwin artifacts.
-    ids:
-      - vedox-archive
-    # Signature artifacts are the signed zip files; goreleaser uploads them.
-    artifacts: archive
-    # Shell command goreleaser executes to sign each artifact.
-    # ${artifact} is goreleaser's substitution for the current artifact path.
-    # codesign flags:
-    #   --sign              Developer ID Application cert identity from keychain
-    #   --options runtime   Hardened runtime (required for notarization)
-    #   --timestamp         Embed a secure timestamp (required for notarization)
-    #   --force             Re-sign if already signed (idempotent in CI)
-    cmd: codesign
-    args:
-      - "--sign"
-      - "Developer ID Application: Pixelabs (<TEAM_ID>)"
-      - "--options"
-      - "runtime"
-      - "--timestamp"
-      - "--force"
-      - "${artifact}"
-    # goreleaser expects the signed file at the same path (codesign modifies
-    # in-place; no output path substitution needed).
-    output: true
-
-    # TODO (Week 9): Add notarytool submission here or as a post-goreleaser
-    # step in release.yml. Notarization is asynchronous — submit, poll, staple.
-    # Skeleton notarytool command (DO NOT ENABLE until pipeline is tested):
-    #
-    # xcrun notarytool submit "${artifact}" \
-    #   --apple-id thepixelabs@gmail.com \
-    #   --team-id <TEAM_ID> \
-    #   --password <AC_PASSWORD> \
-    #   --wait
-    # xcrun stapler staple "${artifact}"
 
 # ---------------------------------------------------------------------------
 # Changelog: auto-generated from conventional commits
