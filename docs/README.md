@@ -42,6 +42,8 @@ The ten content types are defined exhaustively in [WRITING_FRAMEWORK.md Section 
 
 ## Starting points
 
+- new to Vedox? start at [QUICKSTART.md](./QUICKSTART.md) — first 10 minutes, zero assumptions.
+- installing Vedox? see [INSTALL.md](../INSTALL.md) — macOS, Linux, Docker, source build.
 - New to Vedox? Read [ADR-001: Markdown as Source of Truth](./adr/001-markdown-as-source-of-truth.md) first.
 - Writing a how-to? Start at [How to Write a How-To](./how-to/use-how-to-template.md) after the framework.
 - Writing an ADR? Start at [How to Write an ADR](./how-to/use-adr-template.md) after the framework.

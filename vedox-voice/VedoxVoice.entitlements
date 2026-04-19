@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  VedoxVoice.entitlements
+
+  Entitlements required for the VedoxVoice helper binary.
+
+  com.apple.security.device.audio-input
+    Required for AVAudioEngine microphone capture.  Without this entitlement
+    the binary cannot access the microphone even if the user grants permission
+    in System Settings.
+
+  com.apple.security.automation.apple-events
+    Required for accessibility APIs (AXIsProcessTrusted) so the NSEvent
+    global hotkey monitor can fire for other applications.
+
+  NOTE: com.apple.security.app-sandbox is intentionally absent.
+  Sandboxing would prevent Unix socket IPC with the Go daemon (which is not
+  part of the same sandbox container) and global event monitoring.  Ship as
+  a Developer ID binary (not Mac App Store) to retain these capabilities.
+-->
+<plist version="1.0">
+<dict>
+  <!-- Microphone access via AVAudioEngine -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
+  <!-- Required for NSEvent global monitor to receive events from other apps -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+
+  <!-- Allow hardened-runtime binary to run normally (required for notarization) -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <false/>
+
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <false/>
+
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <false/>
+</dict>
+</plist>
