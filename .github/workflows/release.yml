@@ -19,7 +19,7 @@ permissions: {}
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/pixelicous/vedox
+  IMAGE_NAME: ghcr.io/thepixelabs/vedox
   # Go version must match go.mod. Update both in lockstep.
   GO_VERSION: "1.25"
   NODE_VERSION: "22"
@@ -103,7 +103,7 @@ jobs:
 
       # ── Homebrew tap token (GitHub App → short-lived token) ─────────────────
       # MAINTAINER: Before the first release, create a GitHub App with
-      # contents: write + pull_requests: write scoped to pixelicous/homebrew-vedox.
+      # contents: write + pull_requests: write scoped to thepixelabs/homebrew-tap.
       # Store its ID and base64-encoded PEM private key as repository secrets:
       #   VEDOX_RELEASE_APP_ID
       #   VEDOX_RELEASE_APP_PRIVATE_KEY
@@ -118,7 +118,7 @@ jobs:
         with:
           app_id: ${{ secrets.VEDOX_RELEASE_APP_ID }}
           private_key: ${{ secrets.VEDOX_RELEASE_APP_PRIVATE_KEY }}
-          repository: pixelicous/homebrew-vedox
+          repository: thepixelabs/homebrew-tap
 
       # ── goreleaser ──────────────────────────────────────────────────────────
       # goreleaser v2 reads .goreleaser.yaml from the repo root.
@@ -148,7 +148,7 @@ jobs:
       # Verification (by end users):
       #   cosign verify-blob \
       #     --certificate-identity \
-      #       "https://github.com/pixelicous/Vedox/.github/workflows/release.yml@refs/tags/<TAG>" \
+      #       "https://github.com/thepixelabs/Vedox/.github/workflows/release.yml@refs/tags/<TAG>" \
       #     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
       #     --bundle vedox_<VERSION>_checksums.txt.bundle \
       #     vedox_<VERSION>_checksums.txt

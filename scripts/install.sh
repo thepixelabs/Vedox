@@ -35,7 +35,7 @@ set -eu
 # Constants
 # ---------------------------------------------------------------------------
 
-REPO="pixelicous/vedox"
+REPO="thepixelabs/vedox"
 RELEASES_BASE="https://github.com/${REPO}/releases/latest/download"
 BINARY_NAME="vedox"
 

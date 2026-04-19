@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://polyformproject.org/licenses/shield/1.0.0"><img src="https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-blue?style=flat-square" alt="PolyForm Shield 1.0.0 license" /></a>
-  <a href="https://github.com/pixelicous/vedox/actions"><img src="https://img.shields.io/github/actions/workflow/status/pixelicous/vedox/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
+  <a href="https://github.com/thepixelabs/vedox/actions"><img src="https://img.shields.io/github/actions/workflow/status/thepixelabs/vedox/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
 </p>
 
 ---
@@ -49,7 +49,7 @@ Vedox has three parts that work together:
 **macOS (Homebrew):**
 
 ```sh
-brew install pixelicous/vedox/vedox
+brew install thepixelabs/tap/vedox
 ```
 
 **Linux / macOS (curl):**
@@ -63,7 +63,7 @@ curl -fsSL https://vedox.pixelabs.net/install.sh | sh
 ```sh
 docker run -v ~/.vedox:/root/.vedox -v ~/docs:/workspace \
   -p 5150:5150 -p 5151:5151 \
-  ghcr.io/pixelicous/vedox
+  ghcr.io/thepixelabs/vedox
 ```
 
 After any install, run `vedox doctor` to confirm your Git identity, keychain access, and daemon status. See [INSTALL.md](INSTALL.md) for platform-specific notes, apt/rpm packages, and source builds.
