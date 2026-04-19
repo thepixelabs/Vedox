@@ -48,8 +48,11 @@ jobs:
       attestations: write
 
     outputs:
-      # Expose the tag for downstream jobs.
-      tag: ${{ github.ref_name }}
+      # Expose the version (tag minus leading 'v') for downstream jobs.
+      # goreleaser uses the v-stripped form in all its artifact filenames
+      # (vedox_0.1.0-alpha.1_checksums.txt, vedox-0.1.0-alpha.1-*.tar.gz, etc.),
+      # so downstream jobs that reference those filenames need the same form.
+      version: ${{ steps.version.outputs.value }}
 
     steps:
       # ── Source ─────────────────────────────────────────────────────────────
@@ -58,6 +61,12 @@ jobs:
         with:
           # Full history is required for goreleaser changelog generation.
           fetch-depth: 0
+
+      # Strip the leading 'v' from the tag so downstream steps can reference
+      # goreleaser's v-stripped artifact filenames.
+      - name: Compute version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       # ── Go toolchain ────────────────────────────────────────────────────────
       - name: Setup Go
@@ -157,18 +166,21 @@ jobs:
       #     --bundle vedox_<VERSION>_checksums.txt.bundle \
       #     vedox_<VERSION>_checksums.txt
       - name: Sign checksums with cosign (keyless OIDC)
+        # goreleaser strips the leading 'v' from the tag for the checksum
+        # filename (vedox_0.1.0-alpha.1_checksums.txt), so we strip it here too.
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           cosign sign-blob \
             --yes \
-            --bundle "vedox_${{ github.ref_name }}_checksums.txt.bundle" \
-            dist/vedox_${{ github.ref_name }}_checksums.txt
+            --bundle "vedox_${VERSION}_checksums.txt.bundle" \
+            "dist/vedox_${VERSION}_checksums.txt"
         # dist/ is where goreleaser writes all artifacts when run from repo root.
 
       - name: Upload cosign bundle
         uses: actions/upload-artifact@v4
         with:
           name: cosign-bundle-${{ github.ref_name }}
-          path: vedox_${{ github.ref_name }}_checksums.txt.bundle
+          path: vedox_*_checksums.txt.bundle
           retention-days: 365
 
       # ── Sign GHCR docker images with cosign ─────────────────────────────────
@@ -193,7 +205,8 @@ jobs:
       - name: Attest build provenance (SLSA L3)
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: dist/vedox_${{ github.ref_name }}_checksums.txt
+          # goreleaser strips the leading 'v' from the tag in checksum filename.
+          subject-path: dist/vedox_*_checksums.txt
 
       # ── Attest GHCR image provenance ────────────────────────────────────────
       - name: Attest GHCR image provenance (SLSA L3)
@@ -250,7 +263,7 @@ jobs:
         with:
           # Download the macOS zip produced by goreleaser.
           # Artifact name matches the goreleaser archive name_template.
-          name: vedox-${{ needs.release.outputs.tag }}-darwin-universal.zip
+          name: vedox-${{ needs.release.outputs.version }}-darwin-universal.zip
           path: dist/
         # This step will fail if the artifact name does not match what goreleaser
         # produced. Check the goreleaser archives.name_template in .goreleaser.yaml.
@@ -303,7 +316,7 @@ jobs:
         # then xcrun stapler attaches the notarization ticket to the binary.
         # --wait blocks until notarization is accepted or rejected (up to 15 min).
         run: |
-          ARTIFACT="dist/vedox-${{ needs.release.outputs.tag }}-darwin-universal.zip"
+          ARTIFACT="dist/vedox-${{ needs.release.outputs.version }}-darwin-universal.zip"
 
           if [[ ! -f "$ARTIFACT" ]]; then
             echo "::warning::macOS artifact not found at $ARTIFACT — skipping notarization."
@@ -331,8 +344,8 @@ jobs:
       - name: Upload notarized artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vedox-${{ needs.release.outputs.tag }}-darwin-notarized
-          path: dist/vedox-${{ needs.release.outputs.tag }}-darwin-universal.zip
+          name: vedox-${{ needs.release.outputs.version }}-darwin-notarized
+          path: dist/vedox-${{ needs.release.outputs.version }}-darwin-universal.zip
           retention-days: 90
         # Only runs if the notarize step produced the file.
         if: success()
