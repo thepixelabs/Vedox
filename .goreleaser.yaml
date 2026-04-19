@@ -44,7 +44,12 @@ before:
     # the assets must be inside apps/cli/. goreleaser copies them here before
     # the Go compiler runs. editorassets/ contains only .gitkeep in the repo;
     # real assets are never committed. See CTO ruling R12.
-    - cp -r apps/editor/build/* apps/cli/internal/webassets/editorassets/
+    #
+    # IMPORTANT: goreleaser executes before.hooks directly via exec (no shell),
+    # so glob patterns like `build/*` would NOT be expanded. We use the
+    # POSIX-portable `src/.` → `dst/` form which copies directory CONTENTS
+    # (both files and hidden dotfiles) without needing shell globbing.
+    - cp -r apps/editor/build/. apps/cli/internal/webassets/editorassets/
 
 # ---------------------------------------------------------------------------
 # Builds: cross-compile matrix
