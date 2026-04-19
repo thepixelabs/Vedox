@@ -113,9 +113,10 @@ jobs:
       - name: Generate Homebrew tap token
         id: tap-token
         uses: actions/create-github-app-token@v1
-        # Skip gracefully if the App secrets are not yet configured — goreleaser
-        # will then fail on the brews block (expected until secrets are copied).
-        if: ${{ secrets.HOMEBREW_TAP_APP_ID != '' }}
+        # continue-on-error so the whole workflow doesn't die if the App
+        # secrets are missing at first run — goreleaser just fails on the
+        # brews block in that case, everything else still publishes.
+        continue-on-error: true
         with:
           app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
@@ -230,17 +231,21 @@ jobs:
     needs: release
     runs-on: macos-latest
     timeout-minutes: 30
-    # Gate: skip entirely if APPLE_DEVELOPER_ENROLLED is not set.
-    if: ${{ secrets.APPLE_DEVELOPER_ENROLLED != '' }}
 
     permissions:
       contents: write
+
+    env:
+      # Bind secret to env so we can gate individual steps.
+      # (GitHub Actions forbids `secrets.*` inside job/step `if:` conditions.)
+      APPLE_DEVELOPER_ENROLLED: ${{ secrets.APPLE_DEVELOPER_ENROLLED }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Download release artifacts
+        if: env.APPLE_DEVELOPER_ENROLLED != ''
         uses: actions/download-artifact@v4
         with:
           # Download the macOS zip produced by goreleaser.
@@ -252,6 +257,7 @@ jobs:
         continue-on-error: true
 
       - name: Import Developer ID certificate into keychain
+        if: env.APPLE_DEVELOPER_ENROLLED != ''
         # Imports the P12 certificate into a temporary keychain so codesign and
         # notarytool can access it. The keychain is ephemeral — it exists only
         # for this runner and is deleted when the job ends.
@@ -281,6 +287,7 @@ jobs:
           rm -f "$RUNNER_TEMP/certificate.p12"
 
       - name: Write App Store Connect API key
+        if: env.APPLE_DEVELOPER_ENROLLED != ''
         # notarytool accepts an API key (.p8 file) instead of an Apple ID password.
         # API-key auth is the Pixelabs-wide convention (dispatch, kubecat, uplnk):
         # no app-specific password needed, no 2FA prompts, and keys are scoped.
@@ -291,6 +298,7 @@ jobs:
           chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
 
       - name: Notarize macOS universal binary
+        if: env.APPLE_DEVELOPER_ENROLLED != ''
         # xcrun notarytool submits the zip, waits for Apple's servers to respond,
         # then xcrun stapler attaches the notarization ticket to the binary.
         # --wait blocks until notarization is accepted or rejected (up to 15 min).
