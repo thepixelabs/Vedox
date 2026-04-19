@@ -330,15 +330,31 @@ jobs:
         # Apple requires hardened-runtime + secure-timestamp codesign BEFORE
         # notarization. We unzip the goreleaser archive, sign the bare binary,
         # and re-zip in the form notarytool expects (top-level binary in zip).
+        #
+        # The P12 import can place multiple matching identities in the keychain
+        # (e.g., the Developer ID Application cert AND its intermediate), and
+        # codesign fails ambiguously on a friendly-name match. We resolve the
+        # SHA-1 fingerprint of the actual code-signing identity and pass it
+        # to --sign for an unambiguous match.
         run: |
           ARTIFACT="dist/${ARCHIVE}"
           WORKDIR="$RUNNER_TEMP/codesign"
+          KEYCHAIN_PATH="$RUNNER_TEMP/vedox-release.keychain-db"
           mkdir -p "$WORKDIR"
           unzip -o "$ARTIFACT" -d "$WORKDIR"
 
-          # The archive contains the bare 'vedox' binary (and LICENSE/README).
+          IDENTITY_HASH=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | awk '/Developer ID Application/ {print $2; exit}')
+
+          if [[ -z "$IDENTITY_HASH" ]]; then
+            echo "::error::No Developer ID Application identity found in keychain"
+            security find-identity -v "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          echo "Using signing identity hash: $IDENTITY_HASH"
+
           codesign --force \
-            --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
+            --sign "$IDENTITY_HASH" \
             --options runtime \
             --timestamp \
             "$WORKDIR/vedox"
