@@ -1,4 +1,4 @@
-import adapter from '@sveltejs/adapter-auto';
+import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /** @type {import('@sveltejs/kit').Config} */
@@ -6,7 +6,16 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
-		adapter: adapter(),
+		// adapter-static produces a pure SPA at `build/` that the Go daemon
+		// embeds via //go:embed. Required because the editor is bundled into
+		// the single-binary CLI — no Node runtime at install time.
+		adapter: adapter({
+			pages: 'build',
+			assets: 'build',
+			fallback: 'index.html', // SPA fallback for client-side routing
+			precompress: false,
+			strict: true
+		}),
 
 		// CSP is enforced in two places:
 		//   1. hooks.server.ts — HTTP header on every dev server response (primary)
