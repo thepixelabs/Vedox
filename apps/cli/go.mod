@@ -16,6 +16,7 @@ require (
 	github.com/yuin/goldmark v1.7.8
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/term v0.42.0
+	golang.org/x/time v0.15.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.29.5
