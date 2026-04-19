@@ -276,7 +276,7 @@ changelog:
 # ---------------------------------------------------------------------------
 release:
   github:
-    owner: pixelicous
+    owner: thepixelabs
     name: Vedox
 
   # Draft: true means goreleaser creates a draft release; founder clicks
@@ -296,7 +296,7 @@ release:
 
     **macOS (Homebrew — recommended):**
     ```sh
-    brew tap pixelicous/vedox
+    brew tap thepixelabs/tap
     brew install vedox
     ```
 
@@ -313,17 +313,17 @@ release:
 # ---------------------------------------------------------------------------
 # Homebrew tap: auto-update formula on release
 #
-# Tap repo: pixelicous/homebrew-vedox
+# Tap repo: thepixelabs/homebrew-tap
 # Formula lands at: Formula/vedox.rb
 #
 # PREREQUISITE (founder action — do once before first release):
-#   1. Create GitHub repo pixelicous/homebrew-vedox.
+#   1. Create GitHub repo thepixelabs/homebrew-tap.
 #   2. Copy the Formula/ and Casks/ directories from the tap design doc:
 #      .tasks/vedox-v2/40-execution/WS-P-distribution/01-homebrew-tap-design.md
 #   3. Create a fine-grained PAT (or GitHub App) with contents: write +
-#      pull_requests: write scoped only to pixelicous/homebrew-vedox.
+#      pull_requests: write scoped only to thepixelabs/homebrew-tap.
 #   4. Add HOMEBREW_TAP_TOKEN to the GitHub release environment secrets at:
-#      https://github.com/pixelicous/vedox/settings/environments
+#      https://github.com/thepixelabs/vedox/settings/environments
 #
 # Token strategy (recommended): use a GitHub App installation token generated
 # in the release workflow via tibdex/github-app-token@v2. Secrets needed:
@@ -341,12 +341,18 @@ release:
 brews:
   - name: vedox
 
-    # Tap repo on GitHub.
+    # Tap repo on GitHub — the multi-formula Pixelabs tap at
+    # github.com/thepixelabs/homebrew-tap. vedox is one formula among several
+    # (amnesiai, sanitai, uplnk, …). The tap's accept-bump.yml auto-merges
+    # PRs from the thepixelabs-homebrew-bot App that carry the `version-bump`
+    # label.
     repository:
-      owner: pixelicous
-      name: homebrew-vedox
-      # HOMEBREW_TAP_TOKEN: set as a GitHub Actions secret in the release environment.
-      # Generate via GitHub App token (see release.yml) or fine-grained PAT.
+      owner: thepixelabs
+      name: homebrew-tap
+      # HOMEBREW_TAP_TOKEN: set as a GitHub Actions secret in the release
+      # environment. Generate via the thepixelabs-homebrew-bot GitHub App
+      # (installed on the tap repo) or a fine-grained PAT with contents+PR
+      # write scoped to thepixelabs/homebrew-tap.
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
       # Branch to open the version-bump PR against.
       branch: main
@@ -356,6 +362,9 @@ brews:
         draft: false
         base:
           branch: main
+        # Label the PR so the tap's accept-bump.yml auto-merges it.
+        labels:
+          - version-bump
 
     # Formula file location inside the tap repo.
     directory: Formula
@@ -412,7 +421,7 @@ brews:
 # ---------------------------------------------------------------------------
 # Docker: multi-arch image published to GHCR
 #
-# Registry: ghcr.io/pixelicous/vedox (GHCR only — no Docker Hub)
+# Registry: ghcr.io/thepixelabs/vedox (GHCR only — no Docker Hub)
 # Architectures: linux/amd64 and linux/arm64 via docker buildx + QEMU
 # Runtime base: gcr.io/distroless/static-debian12:nonroot (~27 MB shipped)
 # Signing: keyless cosign OIDC + actions/attest-build-provenance@v2 (SLSA L3)
@@ -453,7 +462,7 @@ dockers:
     goos: linux
     goarch: amd64
     image_templates:
-      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-amd64"
+      - "ghcr.io/thepixelabs/vedox:{{ .Tag }}-amd64"
     dockerfile: Dockerfile
     use: buildx
     # The binary is copied into the image by the Dockerfile go-build stage.
@@ -473,7 +482,7 @@ dockers:
     goos: linux
     goarch: arm64
     image_templates:
-      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-arm64"
+      - "ghcr.io/thepixelabs/vedox:{{ .Tag }}-arm64"
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
@@ -494,15 +503,15 @@ dockers:
 # conditional; goreleaser skips manifest entries with empty name_template.
 # ---------------------------------------------------------------------------
 docker_manifests:
-  - name_template: "ghcr.io/pixelicous/vedox:{{ .Tag }}"
+  - name_template: "ghcr.io/thepixelabs/vedox:{{ .Tag }}"
     image_templates:
-      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-amd64"
-      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-arm64"
+      - "ghcr.io/thepixelabs/vedox:{{ .Tag }}-amd64"
+      - "ghcr.io/thepixelabs/vedox:{{ .Tag }}-arm64"
 
-  - name_template: "{{ if not .Prerelease }}ghcr.io/pixelicous/vedox:latest{{ end }}"
+  - name_template: "{{ if not .Prerelease }}ghcr.io/thepixelabs/vedox:latest{{ end }}"
     image_templates:
-      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-amd64"
-      - "ghcr.io/pixelicous/vedox:{{ .Tag }}-arm64"
+      - "ghcr.io/thepixelabs/vedox:{{ .Tag }}-amd64"
+      - "ghcr.io/thepixelabs/vedox:{{ .Tag }}-arm64"
 
 # ---------------------------------------------------------------------------
 # Announce: disabled

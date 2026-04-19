@@ -9,7 +9,7 @@ after any install, run `vedox doctor` to verify your environment. it checks Git 
 ## macOS — Homebrew
 
 ```sh
-brew install pixelicous/vedox/vedox
+brew install thepixelabs/tap/vedox
 ```
 
 to auto-start the daemon on login:
@@ -65,7 +65,7 @@ docker run \
   -v ~/docs:/workspace \
   -p 5150:5150 \
   -p 5151:5151 \
-  ghcr.io/pixelicous/vedox
+  ghcr.io/thepixelabs/vedox
 ```
 
 - `~/.vedox` holds your global config, registered repos, and user preferences
@@ -81,7 +81,7 @@ the Docker image does not run launchd or systemd. use your container runtime's r
 **prerequisites:** Go 1.23+, Node 20+, pnpm 9+, Git with `user.name` and `user.email` set.
 
 ```sh
-git clone https://github.com/pixelicous/vedox.git
+git clone https://github.com/thepixelabs/vedox.git
 cd vedox
 pnpm install
 cd apps/cli && make build   # → apps/cli/bin/vedox
