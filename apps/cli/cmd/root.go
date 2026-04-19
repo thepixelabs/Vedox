@@ -26,7 +26,7 @@ import (
 //	                   -X github.com/vedox/vedox/cmd.commit=$(git rev-parse --short HEAD) \
 //	                   -X github.com/vedox/vedox/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 var (
-	version   = "dev"
+	version   = "v0.1.0-alpha.1"
 	commit    = "none"
 	buildDate = "unknown"
 )
