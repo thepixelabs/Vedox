@@ -102,23 +102,26 @@ jobs:
         # GitHub Actions OIDC token for this workflow run.
 
       # ── Homebrew tap token (GitHub App → short-lived token) ─────────────────
-      # MAINTAINER: Before the first release, create a GitHub App with
-      # contents: write + pull_requests: write scoped to thepixelabs/homebrew-tap.
-      # Store its ID and base64-encoded PEM private key as repository secrets:
-      #   VEDOX_RELEASE_APP_ID
-      #   VEDOX_RELEASE_APP_PRIVATE_KEY
-      # If neither secret exists yet, goreleaser will fail on the brews block.
-      # Short-term workaround: add HOMEBREW_TAP_TOKEN as a fine-grained PAT secret.
+      # Uses the thepixelabs-homebrew-bot GitHub App already installed on the
+      # tap repo (used by sibling projects: dispatch, kubecat, amnesiai,
+      # sanitai, uplnk). Copy the App ID + private key from any sibling repo
+      # as these two Vedox secrets:
+      #   HOMEBREW_TAP_APP_ID
+      #   HOMEBREW_TAP_APP_PRIVATE_KEY
+      # Goreleaser's brews block consumes the resulting token via
+      # HOMEBREW_TAP_TOKEN env var below.
       - name: Generate Homebrew tap token
         id: tap-token
-        uses: tibdex/github-app-token@v2
-        # Skip gracefully if the App secrets are not yet configured.
-        # MAINTAINER: Remove the `if` once the GitHub App is provisioned.
-        if: ${{ secrets.VEDOX_RELEASE_APP_ID != '' }}
+        uses: actions/create-github-app-token@v1
+        # Skip gracefully if the App secrets are not yet configured — goreleaser
+        # will then fail on the brews block (expected until secrets are copied).
+        if: ${{ secrets.HOMEBREW_TAP_APP_ID != '' }}
         with:
-          app_id: ${{ secrets.VEDOX_RELEASE_APP_ID }}
-          private_key: ${{ secrets.VEDOX_RELEASE_APP_PRIVATE_KEY }}
-          repository: thepixelabs/homebrew-tap
+          app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          # Scoped to the tap repo only — App has no write access elsewhere.
+          owner: thepixelabs
+          repositories: homebrew-tap
 
       # ── goreleaser ──────────────────────────────────────────────────────────
       # goreleaser v2 reads .goreleaser.yaml from the repo root.
