@@ -209,16 +209,26 @@ jobs:
           subject-path: dist/vedox_*_checksums.txt
 
       # ── Attest GHCR image provenance ────────────────────────────────────────
+      # Extract the multi-arch manifest digest from goreleaser's artifacts.json.
+      # goreleaser emits a "Docker Manifest" entry with extra.Digest for the
+      # multi-arch tag — that's the digest the attestation must reference.
+      - name: Extract GHCR manifest digest
+        id: ghcr-digest
+        run: |
+          DIGEST=$(jq -r --arg image "${IMAGE_NAME}:${GITHUB_REF_NAME}" \
+            '.[] | select(.type == "Docker Manifest" and .name == $image) | .extra.Digest' \
+            dist/artifacts.json)
+          if [[ -z "$DIGEST" || "$DIGEST" == "null" ]]; then
+            echo "::error::Could not find docker manifest digest in dist/artifacts.json"
+            exit 1
+          fi
+          echo "value=${DIGEST}" >> "$GITHUB_OUTPUT"
+
       - name: Attest GHCR image provenance (SLSA L3)
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.IMAGE_NAME }}
-          subject-digest: >-
-            sha256:placeholder-replaced-at-runtime
-          # MAINTAINER: goreleaser outputs a artifacts.json with image digests.
-          # Wire the exact digest here once goreleaser artifact introspection is
-          # confirmed. For now, the blob attestation above covers the checksums
-          # file which transitively includes docker image layer hashes.
+          subject-digest: ${{ steps.ghcr-digest.outputs.value }}
           push-to-registry: true
 
   # ---------------------------------------------------------------------------
