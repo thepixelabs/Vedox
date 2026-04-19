@@ -319,11 +319,26 @@ jobs:
         # notarytool accepts an API key (.p8 file) instead of an Apple ID password.
         # API-key auth is the Pixelabs-wide convention (dispatch, kubecat, uplnk):
         # no app-specific password needed, no 2FA prompts, and keys are scoped.
+        #
+        # We pass the key through env (not direct ${{ }} interpolation) so the
+        # multi-line PEM block survives intact. printf '%s\n' guarantees a
+        # trailing newline (Apple's PEM parser rejects keys without one,
+        # producing 'invalidP8').
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
-          cat > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8 \
-            <<< "${{ secrets.APPLE_API_KEY_P8 }}"
-          chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+
+          # Sanity check: PEM key must start with -----BEGIN PRIVATE KEY-----.
+          if ! head -1 "$KEY_PATH" | grep -q "BEGIN PRIVATE KEY"; then
+            echo "::error::APPLE_API_KEY_P8 is not a valid PEM private key (header missing)"
+            head -1 "$KEY_PATH"
+            exit 1
+          fi
 
       - name: Codesign macOS universal binary
         if: env.APPLE_DEVELOPER_ENROLLED != ''
