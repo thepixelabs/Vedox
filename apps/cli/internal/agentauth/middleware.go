@@ -37,7 +37,9 @@ type Middleware func(http.HandlerFunc) http.HandlerFunc
 
 // RequireAgent returns middleware that enforces HMAC-SHA256 authentication
 // against the given KeyStore on all requests it wraps. It uses the
-// process-wide nonce cache to reject replayed requests.
+// process-wide nonce cache to reject replayed requests and the process-wide
+// per-key rate limiter to reject bursts exceeding 100 req/s sustained / 200
+// burst per API key.
 //
 // Validation order (fail-closed at every step):
 //  1. Key ID header present and resolves to a known, non-revoked APIKey.
@@ -46,7 +48,11 @@ type Middleware func(http.HandlerFunc) http.HandlerFunc
 //     downstream handler can still read it.
 //  4. Expected HMAC is computed from (method, path, timestamp, bodyHash).
 //  5. Provided signature compared with SecureEqual.
-//  5b. Nonce cache check: the (keyID, timestamp, bodyHash) tuple must not
+//  5b. Rate limit check: the keyID must not have exceeded its token-bucket
+//      quota. Overflow returns HTTP 429 (VDX-306). This check runs AFTER
+//      signature validation so unauthenticated requests never consume quota,
+//      but BEFORE the nonce check so denial is cheap (no cache write).
+//  5c. Nonce cache check: the (keyID, timestamp, bodyHash) tuple must not
 //      have been seen within the last 10 minutes. Replays return HTTP 409
 //      with VDX-307 — distinct from VDX-300 so legitimate agents can
 //      distinguish a replay rejection from a credential error.
@@ -60,12 +66,20 @@ type Middleware func(http.HandlerFunc) http.HandlerFunc
 // VDX-300 message — we do not reveal which specific check failed, to avoid
 // building an oracle an attacker can use to probe the system.
 func RequireAgent(ks *KeyStore) Middleware {
-	return requireAgentWithCache(ks, globalNonceCache)
+	return requireAgentWithCacheAndLimiter(ks, globalNonceCache, globalKeyRateLimiter)
 }
 
-// requireAgentWithCache is the internal constructor used by RequireAgent and
-// by tests that need an isolated NonceCache to avoid cross-test contamination.
+// requireAgentWithCache is retained for backward compatibility with existing
+// tests that only need to inject an isolated NonceCache. It wires the
+// process-wide rate limiter.
 func requireAgentWithCache(ks *KeyStore, nc *NonceCache) Middleware {
+	return requireAgentWithCacheAndLimiter(ks, nc, globalKeyRateLimiter)
+}
+
+// requireAgentWithCacheAndLimiter is the fully-injectable constructor used by
+// RequireAgent and by tests that need isolated state for both the nonce cache
+// and the per-key rate limiter.
+func requireAgentWithCacheAndLimiter(ks *KeyStore, nc *NonceCache, krl *keyRateLimiter) Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			// 1. Key ID lookup.
@@ -138,7 +152,17 @@ func requireAgentWithCache(ks *KeyStore, nc *NonceCache) Middleware {
 				return
 			}
 
-			// 5b. Nonce / replay check. The (keyID, timestamp, bodyHash) tuple
+			// 5b. Rate limit check. The keyID's token bucket is consulted after
+			//     the signature has been verified so unauthenticated callers
+			//     cannot deplete legitimate keys' quotas. Denial is cheap here:
+			//     no cache write occurs, and the 429 is the cheapest possible
+			//     rejection path after HMAC verification.
+			if !krl.Allow(keyID) {
+				rejectRateLimit(w, r, keyID)
+				return
+			}
+
+			// 5c. Nonce / replay check. The (keyID, timestamp, bodyHash) tuple
 			//     is recorded in the nonce cache on the first valid request.
 			//     Any identical replay within the 10-minute TTL window is
 			//     rejected with 409 Conflict (VDX-307) — a separate code from
