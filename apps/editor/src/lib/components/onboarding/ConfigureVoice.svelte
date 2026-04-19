@@ -53,13 +53,15 @@
   <div class="step-voice__soon" role="note" aria-label="Coming soon">
     <div class="step-voice__soon-badge">coming soon</div>
     <p class="step-voice__soon-text">
-      voice commands are macOS-first and land in a near-term update.
+      voice commands ship in v2.0.1 (macOS) and are available now on linux
+      with a <code>-tags whisper</code> build.
       the toggle below is a preview — it does not activate anything yet.
     </p>
     <p class="step-voice__soon-text">
-      on macOS, vedox uses <code>CoreAudio</code> for capture.
-      linux support via <code>whisper.cpp</code> is planned.
-      windows is best-effort.
+      on macOS, audio capture runs through a swift helper
+      (<code>VedoxVoiceHelper</code>) inside the Vedox.app bundle.
+      on linux, vedox uses <code>whisper.cpp</code> with evdev input.
+      windows is deferred.
     </p>
   </div>
 
