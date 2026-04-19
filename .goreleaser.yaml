@@ -143,9 +143,13 @@ universal_binaries:
 # ---------------------------------------------------------------------------
 archives:
   - id: vedox-archive
-    # Only archive the builds from our single build target.
+    # Archive both the per-arch linux builds AND the macOS universal binary.
+    # universal_binaries (replace: true) emits a separate 'vedox-universal'
+    # build ID — it MUST be listed here, otherwise the darwin archive is
+    # silently skipped and only linux artifacts make it into the release.
     builds:
       - vedox
+      - vedox-universal
 
     # Platform-specific format selection.
     format_overrides:
