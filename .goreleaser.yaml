@@ -357,14 +357,14 @@ brews:
       # Branch to open the version-bump PR against.
       branch: main
       # Goreleaser opens a PR from this branch name.
+      # NOTE: PR labels are applied by the tap's accept-bump.yml based on
+      # branch name (chore/bump-vedox-*) — goreleaser v2.15.x does not expose
+      # a `labels` field under brews.pull_request, so we label downstream.
       pull_request:
         enabled: true
         draft: false
         base:
           branch: main
-        # Label the PR so the tap's accept-bump.yml auto-merges it.
-        labels:
-          - version-bump
 
     # Formula file location inside the tap repo.
     directory: Formula
