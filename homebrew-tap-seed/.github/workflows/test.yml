@@ -1,0 +1,54 @@
+name: brew test-bot
+
+# Run the formula's test block on every PR and on direct pushes to main.
+# This catches formula syntax errors and broken test blocks before they
+# reach the tap's main branch.
+#
+# brew test-bot handles: `brew install`, `brew test`, `brew audit --strict`.
+# It uses the Homebrew/homebrew-core test-bot action which sets up a clean
+# environment — do not add manual `brew install` steps; test-bot does it.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Formula/**"
+  pull_request:
+    paths:
+      - "Formula/**"
+
+jobs:
+  test-bot:
+    strategy:
+      matrix:
+        os:
+          - macos-15        # Apple Silicon (arm64) — primary target
+          - macos-13        # Intel Mac (amd64) — secondary target
+          - ubuntu-latest   # Linuxbrew smoke test
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Cache Homebrew packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.cache-path }}
+          key: ${{ runner.os }}-homebrew-${{ hashFiles('Formula/**') }}
+          restore-keys: |
+            ${{ runner.os }}-homebrew-
+
+      - name: Run brew test-bot
+        run: brew test-bot --only-cleanup-before --only-setup --only-formulae --only-cleanup-after
+        # test-bot runs in the context of this tap automatically when the
+        # checkout is at the repo root. It discovers Formula/vedox.rb and
+        # runs install + test + audit --strict on it.
+        #
+        # NOTE: during the placeholder phase (version = __VERSION__),
+        # brew install will fail because the URL does not resolve.
+        # This is expected until the first real release populates the
+        # version and sha256 fields. The workflow will go green after
+        # goreleaser opens the first version-bump PR.
