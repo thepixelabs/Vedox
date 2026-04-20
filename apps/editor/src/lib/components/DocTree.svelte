@@ -574,7 +574,7 @@
     outline: none;
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
     padding: 5px 0;
     /* Remove browser default search-cancel button */
     appearance: none;
@@ -586,7 +586,7 @@
 
   .doctree__filter-input::placeholder {
     color: var(--color-text-muted);
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
   }
 
   .doctree__filter-clear {
@@ -633,7 +633,7 @@
     align-items: center;
     gap: var(--space-2);
     width: 100%;
-    padding: 4px var(--space-3);
+    padding: var(--space-2) var(--space-3);
     background: none;
     border: none;
     border-radius: var(--radius-sm);
@@ -676,7 +676,7 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -688,12 +688,12 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 16px;
-    height: 16px;
+    min-width: 18px;
+    height: 18px;
     padding: 0 4px;
     background-color: var(--color-surface-overlay);
-    border-radius: 8px;
-    font-size: 10px;
+    border-radius: 9px;
+    font-size: var(--text-caption);
     font-family: var(--font-mono);
     font-weight: 500;
     color: var(--color-text-muted);
@@ -739,7 +739,7 @@
     align-items: center;
     gap: var(--space-1);
     padding: 3px var(--space-3) 3px calc(var(--space-3) + 14px);
-    font-size: 10px;
+    font-size: var(--text-caption);
     font-family: var(--font-mono);
     font-weight: 500;
     color: var(--color-text-muted);
@@ -761,7 +761,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 4px var(--space-3) 4px calc(var(--space-3) + 14px);
+    padding: var(--space-2) var(--space-3) var(--space-2) calc(var(--space-3) + 14px);
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     text-decoration: none;
@@ -817,7 +817,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
     font-size: var(--font-size-sm);
   }
 
@@ -852,7 +852,7 @@
     gap: var(--space-2);
     padding: var(--space-3) var(--space-3);
     font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
     color: var(--color-text-muted);
   }
 
@@ -862,7 +862,7 @@
     padding: 0;
     color: var(--color-accent);
     font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 2px;

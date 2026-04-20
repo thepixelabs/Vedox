@@ -209,7 +209,7 @@
     min-width: 240px;
     height: 100vh;
     background-color: var(--surface-3);
-    border-right: 1px solid var(--border-hairline);
+    border-right: 1px solid var(--border-default);
     overflow: hidden;
     transition:
       width var(--duration-slow) var(--ease-in-out),
@@ -315,7 +315,7 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-4);
-    border-bottom: 1px solid var(--border-hairline);
+    border-bottom: 1px solid var(--border-default);
   }
 
   .sidebar__divider {
@@ -333,7 +333,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 5px var(--space-3);
+    padding: var(--space-2) var(--space-3);
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     text-decoration: none;
@@ -370,14 +370,14 @@
   .sidebar__nav {
     flex-shrink: 0;
     padding: var(--space-1) var(--space-2);
-    border-top: 1px solid var(--border-hairline);
+    border-top: 1px solid var(--border-default);
   }
 
   .sidebar__nav-link {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 5px var(--space-3);
+    padding: var(--space-2) var(--space-3);
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     text-decoration: none;
