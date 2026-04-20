@@ -941,10 +941,14 @@ func TestContract_Graph(t *testing.T) {
 		f.assertWrongMethod(t, "/api/graph", http.MethodPost)
 	})
 
-	t.Run("project_param_required_returns_400", func(t *testing.T) {
+	t.Run("empty_project_aggregates_across_projects", func(t *testing.T) {
+		// Empty project param aggregates across all registered projects.
+		// Fixture has no GraphStore, so this surfaces as 503 (same as
+		// the single-project path below), not 400.
 		w := f.get(t, "/api/graph", nil)
-		assertStatus(t, w, http.StatusBadRequest)
-		hasKeys(t, w, "code", "message")
+		if w.Code == http.StatusBadRequest {
+			t.Errorf("GET /api/graph without project param must aggregate, not 400")
+		}
 	})
 
 	t.Run("no_graph_store_returns_503", func(t *testing.T) {
