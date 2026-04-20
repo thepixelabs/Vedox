@@ -112,6 +112,7 @@
                     class="sidebar__project-link"
                     href="/projects/{project.id}"
                     aria-label="Open project {project.name}"
+                    aria-current={$page.url.pathname.startsWith(`/projects/${project.id}`) ? 'page' : undefined}
                   >
                     <span class="sidebar__project-icon" aria-hidden="true">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -423,72 +424,6 @@
     line-height: 1.4;
   }
 
-  /* ── Legacy bottom-link styles (unused but kept for reference) ───────── */
-
-  .sidebar__bottom {
-    flex-shrink: 0;
-    padding-bottom: var(--space-2);
-  }
-
-  .sidebar__bottom-link {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    text-decoration: none;
-    border-radius: var(--radius-md);
-    margin: 1px var(--space-1);
-    transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
-  }
-
-  .sidebar__bottom-link:hover {
-    background-color: var(--color-surface-overlay);
-    color: var(--color-text-primary);
-  }
-
-  .sidebar__bottom-link:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: -2px;
-  }
-
-  /* Active state — current page link gets accent text */
-  .sidebar__bottom-link--active {
-    color: var(--color-accent);
-    background-color: var(--color-accent-subtle);
-  }
-
-  .sidebar__bottom-link--active:hover {
-    background-color: var(--color-accent-subtle);
-    color: var(--color-accent);
-  }
-
-  /* Pending count badge on the Review Queue link */
-  .sidebar__queue-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 4px;
-    margin-left: auto;
-    background-color: var(--color-accent);
-    color: var(--color-text-inverse);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    border-radius: 9px;
-    font-variant-numeric: tabular-nums;
-    flex-shrink: 0;
-    /* Subtle pulse to draw attention to new items without being annoying */
-    animation: badge-pop 200ms ease both;
-  }
-
-  @keyframes badge-pop {
-    from { transform: scale(0.7); opacity: 0; }
-    to   { transform: scale(1);   opacity: 1; }
-  }
-
   /* ── Overview panel (ultra-wide only) ─────────────────────────────────────── */
   .sidebar__overview-wrapper {
     display: none;
@@ -504,10 +439,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .sidebar__queue-badge {
-      animation: none;
-    }
-
     .sidebar,
     .sidebar__content {
       transition: none;

@@ -13,7 +13,7 @@
    *   - Action buttons use their label as accessible text
    */
 
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { dismissToast } from './toastStore';
   import type { ToastProps } from './toastStore';
 
@@ -27,7 +27,9 @@
   // Auto-dismiss timer
   // ---------------------------------------------------------------------------
 
-  const DURATION = toast.duration ?? 5000;
+  // untrack: toast props are immutable after creation — the store replaces the
+  // whole toast object rather than mutating fields. Reading duration once is correct.
+  const DURATION = untrack(() => toast.duration ?? 5000);
 
   let remaining = $state(DURATION);
   let startedAt = 0;

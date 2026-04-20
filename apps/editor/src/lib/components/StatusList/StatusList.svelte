@@ -36,8 +36,9 @@
   }: Props = $props()
 
   // Local alias avoids shadowing the HTML global `draggable` attribute name
-  // in event handler closures and template expressions.
-  const draggable = isDraggable
+  // in event handler closures and template expressions. $derived keeps it
+  // reactive so parent toggling isDraggable flows through correctly.
+  const draggable = $derived(isDraggable)
 
   // ── Local mutable copy for drag reordering ───────────────────────────────
   let orderedItems = $derived([...items])
@@ -227,7 +228,6 @@
             <button
               class="status-list__drag-handle"
               type="button"
-              role="button"
               aria-label="Drag to reorder {item.title}"
               tabindex="0"
               aria-pressed={isKeyboardDragging}
