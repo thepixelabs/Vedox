@@ -13,6 +13,7 @@
   import DocTree from "$lib/components/DocTree.svelte";
   import TaskBacklog from "$lib/components/TaskBacklog.svelte";
   import ProviderDrawer from "$lib/components/ProviderDrawer.svelte";
+  import EmptyState from "$lib/components/EmptyState.svelte";
 
   const projectId = $derived(($page.params as Record<string, string>)["project"]);
   const project = $derived($projectsStore.find((p) => p.id === projectId) ?? null);
@@ -58,7 +59,16 @@
 
     <section class="project-home__section">
       <h2 class="project-home__section-title">Documents</h2>
-      <DocTree project={project} />
+      {#if project.docs.length === 0}
+        <EmptyState
+          icon={`<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`}
+          heading="no docs yet"
+          body="create your first document to get started"
+          cta={{ label: "new document", href: `/projects/${projectId}/docs/new` }}
+        />
+      {:else}
+        <DocTree project={project} />
+      {/if}
     </section>
 
     <!-- ── Task backlog (VDX-P2-H) ─────────────────────────────────────────── -->
@@ -86,8 +96,18 @@
 
 <style>
   .project-home {
-    padding: var(--space-8);
     max-width: 800px;
+    padding-left: clamp(var(--space-8), 8vw, var(--space-12));
+    padding-right: var(--space-8);
+    padding-top: var(--space-8);
+    padding-bottom: var(--space-8);
+    margin-right: auto;
+  }
+
+  @media (max-width: 900px) {
+    .project-home {
+      padding-left: var(--space-6);
+    }
   }
 
   .project-home__header {
@@ -101,7 +121,6 @@
     margin-bottom: var(--space-2);
   }
 
-  /* Override title margin when inside the row */
   .project-home__header-row .project-home__title {
     margin-bottom: 0;
   }
@@ -131,11 +150,15 @@
   }
 
   .project-home__title {
-    font-size: var(--font-size-xl);
+    font-family: var(--font-display);
+    font-size: clamp(28px, calc(28px + 1.2vw), 40px);
     font-weight: 600;
-    color: var(--color-text-primary);
-    letter-spacing: -0.02em;
-    margin-bottom: var(--space-2);
+    font-variation-settings: "opsz" 72, "wght" 600;
+    letter-spacing: var(--tracking-tighter);
+    line-height: var(--leading-display);
+    color: var(--text-1);
+    margin-bottom: var(--space-3);
+    min-height: calc(40px * 1.05);
   }
 
   .project-home__meta {
@@ -143,6 +166,7 @@
     gap: var(--space-4);
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
+    margin-bottom: var(--space-6);
   }
 
   .project-home__meta-value {
@@ -159,8 +183,7 @@
   .project-home__section-title {
     font-size: var(--font-size-sm);
     font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     color: var(--color-text-muted);
     margin-bottom: var(--space-3);
   }
@@ -181,7 +204,6 @@
     margin-top: var(--space-8);
   }
 
-  /* Section title flex row so the count badge sits inline with the heading */
   .project-home__section--tasks .project-home__section-title {
     display: flex;
     align-items: center;
@@ -192,18 +214,18 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 var(--space-1);
     font-family: var(--font-mono);
     font-size: var(--text-caption);
-    font-weight: 600;
-    color: var(--color-text-inverse);
-    background-color: var(--color-accent);
+    font-weight: 500;
+    color: var(--text-3);
+    background: var(--surface-4);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
-    /* Undo the uppercase + letter-spacing from the parent section-title */
+    padding: 1px var(--space-1);
+    letter-spacing: var(--tracking-wider);
+    min-width: 18px;
+    height: 18px;
     text-transform: none;
-    letter-spacing: 0;
     line-height: 1;
   }
 </style>

@@ -39,6 +39,7 @@ export const AppearanceSchema = z.object({
   measure: z.enum(['narrow', 'default', 'wide']).default('default'),
   density: z.enum(['compact', 'comfortable', 'cozy']).default('comfortable'),
   treeGrouping: z.enum(['type-first', 'folder-first', 'flat']).default('type-first'),
+  wordmarkFont: z.enum(['display', 'mono']).default('display'),
 });
 
 export const EditorSchema = z.object({
