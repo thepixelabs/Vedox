@@ -285,11 +285,13 @@
   }
 
   .sidebar__wordmark-text {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-base);
-    font-weight: 600;
+    font-family: var(--font-wordmark);
+    font-size: 17px;
+    font-weight: 700;
+    font-variation-settings: "opsz" 12, "wght" 700;
     letter-spacing: -0.02em;
-    color: var(--color-text-primary);
+    line-height: 1;
+    color: var(--text-1);
   }
 
   .sidebar__section {
@@ -312,8 +314,7 @@
     padding: var(--space-2) var(--space-3) var(--space-2);
     font-size: var(--text-2xs);
     font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     color: var(--text-4);
     border-bottom: 1px solid var(--border-default);
   }
