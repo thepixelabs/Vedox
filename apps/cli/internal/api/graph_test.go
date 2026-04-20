@@ -9,6 +9,7 @@ import (
 
 	"github.com/vedox/vedox/internal/db"
 	"github.com/vedox/vedox/internal/docgraph"
+	"github.com/vedox/vedox/internal/store"
 )
 
 // seedDoc inserts a minimal document row into the db so that the FK constraint
@@ -41,22 +42,23 @@ func seedDoc(t *testing.T, dbStore *db.Store, id, project string) {
 // it through docgraph.NewGraphStore. The graph tables are created by the
 // migration that db.Open runs automatically.
 
-// TestHandleGraph_MissingProject verifies that omitting the ?project= query
-// parameter returns 400 VDX-400.
-func TestHandleGraph_MissingProject(t *testing.T) {
+// TestHandleGraph_NoProject_NilStore verifies that omitting ?project= with no
+// GraphStore injected returns 503 VDX-503 (store check fires before project
+// enumeration).
+func TestHandleGraph_NoProject_NilStore(t *testing.T) {
 	f := newCoverageServer(t)
 
 	resp := f.get(t, "/api/graph")
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", resp.StatusCode)
 	}
 
 	var body map[string]string
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body["code"] != "VDX-400" {
-		t.Errorf("expected code VDX-400, got %q", body["code"])
+	if body["code"] != "VDX-503" {
+		t.Errorf("expected code VDX-503, got %q", body["code"])
 	}
 }
 
@@ -90,7 +92,7 @@ func TestHandleGraph_EmptyProject(t *testing.T) {
 
 	// Wire the GraphStore into the server. We reach into the handler via a
 	// fresh httptest.Server that wraps a Server with the store set.
-	srv := newGraphServer(t, f, gs)
+	srv := newGraphServer(t, f, gs, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/graph?project=empty-project", nil)
 	w := httptest.NewRecorder()
@@ -155,7 +157,7 @@ func TestHandleGraph_WithRefs(t *testing.T) {
 		t.Fatalf("SaveRefs b.md: %v", err)
 	}
 
-	srv := newGraphServer(t, f, gs)
+	srv := newGraphServer(t, f, gs, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/graph?project=myproject", nil)
 	w := httptest.NewRecorder()
@@ -246,7 +248,7 @@ func TestHandleGraph_CrossProjectIsolation(t *testing.T) {
 		t.Fatalf("SaveRefs projectB: %v", err)
 	}
 
-	srv := newGraphServer(t, f, gs)
+	srv := newGraphServer(t, f, gs, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/graph?project=projectA", nil)
 	w := httptest.NewRecorder()
@@ -267,14 +269,104 @@ func TestHandleGraph_CrossProjectIsolation(t *testing.T) {
 	}
 }
 
+// TestHandleGraph_AllProjects verifies that omitting ?project= returns a merged
+// graph spanning every project registered in the registry.
+func TestHandleGraph_AllProjects(t *testing.T) {
+	f := newCoverageServer(t)
+	gs := docgraph.NewGraphStore(f.dbStore)
+	ctx := context.Background()
+
+	// Seed two projects with one ref each.
+	seedDoc(t, f.dbStore, "alpha/a.md", "alpha")
+	seedDoc(t, f.dbStore, "beta/b.md", "beta")
+
+	if err := gs.SaveRefs(ctx, "alpha/a.md", []docgraph.DocRef{
+		{
+			SourcePath: "alpha/a.md",
+			TargetPath: "alpha/z.md",
+			LinkType:   docgraph.LinkTypeMD,
+		},
+	}); err != nil {
+		t.Fatalf("SaveRefs alpha: %v", err)
+	}
+	if err := gs.SaveRefs(ctx, "beta/b.md", []docgraph.DocRef{
+		{
+			SourcePath: "beta/b.md",
+			TargetPath: "beta/z.md",
+			LinkType:   docgraph.LinkTypeWikilink,
+		},
+	}); err != nil {
+		t.Fatalf("SaveRefs beta: %v", err)
+	}
+
+	reg := store.NewProjectRegistry()
+	// Register stub adapters — the graph handler only calls registry.List(), so
+	// the adapter implementation does not matter for this test.
+	alphaAdapter, err := store.NewLocalAdapter(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewLocalAdapter alpha: %v", err)
+	}
+	betaAdapter, err := store.NewLocalAdapter(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewLocalAdapter beta: %v", err)
+	}
+	reg.Register("alpha", alphaAdapter)
+	reg.Register("beta", betaAdapter)
+
+	srv := newGraphServer(t, f, gs, reg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/graph", nil)
+	w := httptest.NewRecorder()
+	srv.handleGraph(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var gr graphResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gr); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	// Each project contributes 2 nodes (source + stub target) and 1 edge.
+	if len(gr.Nodes) != 4 {
+		t.Errorf("expected 4 nodes (2 per project), got %d", len(gr.Nodes))
+	}
+	if len(gr.Edges) != 2 {
+		t.Errorf("expected 2 edges (1 per project), got %d", len(gr.Edges))
+	}
+
+	// Confirm nodes from both projects are present.
+	nodeIDs := make(map[string]struct{}, len(gr.Nodes))
+	for _, n := range gr.Nodes {
+		nodeIDs[n.Data.ID] = struct{}{}
+	}
+	for _, id := range []string{"alpha/a.md", "alpha/z.md", "beta/b.md", "beta/z.md"} {
+		if _, ok := nodeIDs[id]; !ok {
+			t.Errorf("expected node %q in cross-project graph", id)
+		}
+	}
+
+	// Non-null arrays even when populated.
+	if gr.Nodes == nil {
+		t.Error("nodes must be a non-null array")
+	}
+	if gr.Edges == nil {
+		t.Error("edges must be a non-null array")
+	}
+}
+
 // newGraphServer builds a bare *Server (no HTTP listener) with a GraphStore
 // injected, suitable for direct handler calls via httptest.ResponseRecorder.
 // It reuses the db.Store from the coverage fixture so migrations are already run.
-func newGraphServer(t *testing.T, f *coverageFixture, gs *docgraph.GraphStore) *Server {
+// Pass a non-nil registry to exercise cross-project enumeration.
+func newGraphServer(t *testing.T, f *coverageFixture, gs *docgraph.GraphStore, reg *store.ProjectRegistry) *Server {
 	t.Helper()
 	s := &Server{
 		db:         f.dbStore,
 		graphStore: gs,
+		registry:   reg,
 	}
 	return s
 }
