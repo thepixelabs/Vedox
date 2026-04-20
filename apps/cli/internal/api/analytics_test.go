@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vedox/vedox/internal/agentauth"
 	"github.com/vedox/vedox/internal/ai"
@@ -112,15 +113,22 @@ func TestAnalyticsSummary_WithData(t *testing.T) {
 	f := newAnalyticsFixture(t)
 	ctx := context.Background()
 
+	// Seed events relative to "now" so the 7/30-day windows stay valid as the
+	// wall clock advances. Absolute dates time-bomb the test.
+	now := time.Now().UTC()
+	threeDaysAgo := now.AddDate(0, 0, -3).Format("2006-01-02")
+	sixtyDaysAgo := now.AddDate(0, 0, -60).Format("2006-01-02")
+	twoDaysAgo := now.AddDate(0, 0, -2).Format("2006-01-02")
+
 	// Seed events: 2 published docs 3 days ago, 1 published doc 60 days ago.
-	if err := f.gdb.IncrementDailyEvent(ctx, "2026-04-12", "document.published", 2); err != nil {
+	if err := f.gdb.IncrementDailyEvent(ctx, threeDaysAgo, "document.published", 2); err != nil {
 		t.Fatalf("seed 7d: %v", err)
 	}
-	if err := f.gdb.IncrementDailyEvent(ctx, "2026-02-14", "document.published", 1); err != nil {
+	if err := f.gdb.IncrementDailyEvent(ctx, sixtyDaysAgo, "document.published", 1); err != nil {
 		t.Fatalf("seed 60d: %v", err)
 	}
 	// Seed 5 agent triggers 2 days ago.
-	if err := f.gdb.IncrementDailyEvent(ctx, "2026-04-13", "agent.triggered", 5); err != nil {
+	if err := f.gdb.IncrementDailyEvent(ctx, twoDaysAgo, "agent.triggered", 5); err != nil {
 		t.Fatalf("seed agent: %v", err)
 	}
 
@@ -143,7 +151,7 @@ func TestAnalyticsSummary_WithData(t *testing.T) {
 	if got.TotalDocs != 3 {
 		t.Errorf("total_docs = %d, want 3", got.TotalDocs)
 	}
-	// 7-day window: only the 2 from 2026-04-12 (within 7 days of 2026-04-15).
+	// 7-day window: only the 2 from 3 days ago — the 60-day-old event is out.
 	if got.DocsLast7Days != 2 {
 		t.Errorf("docs_last_7_days = %d, want 2", got.DocsLast7Days)
 	}

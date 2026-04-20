@@ -41,22 +41,27 @@ type graphResponse struct {
 	Edges []graphEdge `json:"edges"`
 }
 
-// handleGraph handles GET /api/graph?project=<project>.
+// handleGraph handles GET /api/graph and GET /api/graph?project=<project>.
 //
-// It reads all outgoing doc references for every document in the project from
-// the GraphStore and assembles them into a Cytoscape-compatible {nodes, edges}
-// payload. Nodes are deduplicated — a document appears once as a source node
-// and zero or more times as an implicit target. Targets that do not correspond
-// to a known source are still emitted as stub nodes so the graph remains
-// coherent for the frontend (broken links are visible as dangling edges).
+// It reads all outgoing doc references from the GraphStore and assembles them
+// into a Cytoscape-compatible {nodes, edges} payload. Nodes are deduplicated —
+// a document appears once as a source node and zero or more times as an
+// implicit target. Targets that do not correspond to a known source are still
+// emitted as stub nodes so the graph remains coherent for the frontend
+// (broken links are visible as dangling edges).
+//
+// When project is supplied, only refs whose source path begins with
+// "<project>/" are included. When project is omitted, refs from every
+// registered project are merged into a single payload. Node IDs carry the
+// project prefix ("<project>/<path>"), so cross-project IDs never collide.
 //
 // Query parameters:
 //
-//	project: project name as returned by GET /api/projects. Required.
+//	project: project name as returned by GET /api/projects. Optional.
+//	         When absent, the response spans all registered projects.
 //
 // Errors:
 //
-//	400 VDX-400 — project parameter is empty.
 //	503 VDX-503 — GraphStore is not available (nil — dev-server mode without a db).
 //	500 VDX-500 — database read error.
 //
@@ -64,10 +69,6 @@ type graphResponse struct {
 // bootstrap token scope is a GA gate per FIX-ARCH-01 spec).
 func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 	project := strings.TrimSpace(r.URL.Query().Get("project"))
-	if project == "" {
-		writeError(w, http.StatusBadRequest, "VDX-400", "project parameter is required")
-		return
-	}
 
 	if s.graphStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "VDX-503", "graph store is not available")
@@ -76,18 +77,24 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Collect all references for every document that belongs to this project.
-	// The graph store indexes by workspace-relative doc ID; all docs belonging
-	// to a project share the prefix "<project>/".
-	prefix := project + "/"
-	refs, err := s.graphStore.GetAllRefsForPrefix(ctx, prefix)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "VDX-500", "failed to read graph data")
-		return
+	// Collect refs for the requested scope. When a project is specified we
+	// query a single prefix; otherwise we union across every registered project.
+	var prefixes []string
+	if project != "" {
+		prefixes = []string{project + "/"}
+	} else if s.registry != nil {
+		for _, name := range s.registry.List() {
+			prefixes = append(prefixes, name+"/")
+		}
+	}
+	// If neither a project was given nor any project is registered (e.g. bare
+	// dev-server), query with an empty prefix to return everything in the store.
+	if len(prefixes) == 0 {
+		prefixes = []string{""}
 	}
 
 	// Deduplicate nodes. We track by ID to avoid emitting the same node twice
-	// when a document has multiple outgoing edges.
+	// when a document has multiple outgoing edges or appears in multiple projects.
 	seen := make(map[string]struct{})
 	var nodes []graphNode
 	var edges []graphEdge
@@ -105,20 +112,27 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	for _, ref := range refs {
-		addNode(ref.SourcePath)
-		// Emit the target as a stub node when it is not already known. This
-		// keeps the graph coherent for the Cytoscape frontend even when the
-		// target does not exist in the index (broken links remain visible).
-		addNode(ref.TargetPath)
-		edges = append(edges, graphEdge{
-			Data: graphEdgeData{
-				ID:       ref.SourcePath + "::" + ref.TargetPath,
-				Source:   ref.SourcePath,
-				Target:   ref.TargetPath,
-				LinkType: string(ref.LinkType),
-			},
-		})
+	for _, prefix := range prefixes {
+		refs, err := s.graphStore.GetAllRefsForPrefix(ctx, prefix)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "VDX-500", "failed to read graph data")
+			return
+		}
+		for _, ref := range refs {
+			addNode(ref.SourcePath)
+			// Emit the target as a stub node when it is not already known. This
+			// keeps the graph coherent for the Cytoscape frontend even when the
+			// target does not exist in the index (broken links remain visible).
+			addNode(ref.TargetPath)
+			edges = append(edges, graphEdge{
+				Data: graphEdgeData{
+					ID:       ref.SourcePath + "::" + ref.TargetPath,
+					Source:   ref.SourcePath,
+					Target:   ref.TargetPath,
+					LinkType: string(ref.LinkType),
+				},
+			})
+		}
 	}
 
 	// Always return non-null slices so the frontend can range without a nil check.
