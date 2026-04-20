@@ -118,8 +118,8 @@
    * with component updates, so the numbers here stay at their 2026-04-01  *
    * baseline: 12 / 14 / 16 / 20.                                          *
    */
-  --font-size-sm: 12px;
-  --font-size-base: 14px;
+  --font-size-sm: 13px;
+  --font-size-base: 15px;
   --font-size-lg: 16px;
   --font-size-xl: 20px;
 
@@ -183,8 +183,8 @@
   --surface-0: oklch(14% 0.01 265);   /* page canvas, the deepest */
   --surface-1: oklch(11% 0.01 265);   /* editor well / sunken */
   --surface-2: oklch(16% 0.01 265);   /* default panels */
-  --surface-3: oklch(19% 0.012 265);  /* sidebar / toolbar */
-  --surface-4: oklch(22% 0.014 265);  /* modals / popovers */
+  --surface-3: oklch(22% 0.012 265);  /* sidebar / toolbar */
+  --surface-4: oklch(26% 0.014 265);  /* modals / popovers */
   --surface-code: oklch(11% 0.01 265);
 
   /* ---- Text ladder ------------------------------------------------------- */
