@@ -13,7 +13,7 @@
     $draft?.projectName?.trim() || 'Untitled project'
   );
 
-  let cardEl: HTMLDivElement | undefined;
+  let cardEl: HTMLDivElement | undefined = $state();
   let expanding = $state(false);
 
   function handleExpand() {
