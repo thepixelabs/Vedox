@@ -93,14 +93,14 @@
   ];
 
   const TYPE_LABELS: Record<DocType, string> = {
-    "how-to": "how-to",
-    tutorial: "tutorial",
-    explanation: "explanation",
-    reference: "reference",
-    adr: "adr",
-    runbook: "runbook",
-    readme: "readme",
-    other: "other",
+    "how-to": "How-to",
+    tutorial: "Tutorial",
+    explanation: "Explanation",
+    reference: "Reference",
+    adr: "ADR",
+    runbook: "Runbook",
+    readme: "Readme",
+    other: "Other",
   };
 
   // ---------------------------------------------------------------------------
@@ -674,8 +674,7 @@
     flex: 1;
     font-size: var(--text-2xs, 11px);
     font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     font-family: var(--font-body);
     overflow: hidden;
     text-overflow: ellipsis;

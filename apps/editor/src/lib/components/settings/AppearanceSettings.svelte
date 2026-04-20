@@ -58,6 +58,11 @@
     { value: 'flat' as const, label: 'Flat', description: 'Alphabetical, no grouping' },
   ];
 
+  const wordmarkFonts = [
+    { value: 'display' as const, label: 'Serif (Fraunces)', description: 'Default editorial display font' },
+    { value: 'mono' as const, label: 'Mono (JetBrains)', description: 'Monospaced wordmark' },
+  ];
+
   const FONT_SIZE_KEY = 'vedox:font-size';
 
   // Font selection state — reads from localStorage to stay in sync with
@@ -109,6 +114,14 @@
   function setMeasure(m: 'narrow' | 'default' | 'wide') {
     readingStore.setMeasure(m);
     updatePrefs('appearance', { measure: m });
+  }
+
+  function setWordmarkFont(w: 'display' | 'mono') {
+    if (browser) {
+      const value = w === 'mono' ? 'var(--font-mono)' : 'var(--font-display)';
+      document.documentElement.style.setProperty('--font-wordmark', value);
+    }
+    updatePrefs('appearance', { wordmarkFont: w });
   }
 
   function matches(text: string): boolean {
@@ -270,6 +283,30 @@
               title={tg.description}
               onclick={() => updatePrefs('appearance', { treeGrouping: tg.value })}
             >{tg.label}</button>
+          {/each}
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Wordmark font -->
+  {#if matches('wordmark') || matches('font') || matches('sidebar') || matches('logo')}
+    <div class="setting-row">
+      <div class="setting-row__label">
+        <span class="setting-row__name">Wordmark font</span>
+        <span class="setting-row__desc">Typeface used for the "vedox" logotype in the sidebar.</span>
+      </div>
+      <div class="setting-row__control">
+        <div class="seg-buttons" role="group" aria-label="Wordmark font">
+          {#each wordmarkFonts as wf (wf.value)}
+            <button
+              type="button"
+              class="seg-btn"
+              class:seg-btn--active={prefs.wordmarkFont === wf.value}
+              aria-pressed={prefs.wordmarkFont === wf.value}
+              title={wf.description}
+              onclick={() => setWordmarkFont(wf.value)}
+            >{wf.label}</button>
           {/each}
         </div>
       </div>

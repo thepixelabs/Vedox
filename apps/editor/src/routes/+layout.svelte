@@ -74,6 +74,18 @@
       }
     }
 
+    // Restore wordmark font preference.
+    try {
+      const raw = localStorage.getItem('vedox-user-prefs');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { appearance?: { wordmarkFont?: string } };
+        const wf = parsed?.appearance?.wordmarkFont;
+        if (wf === 'mono') {
+          document.documentElement.style.setProperty('--font-wordmark', 'var(--font-mono)');
+        }
+      }
+    } catch { /* non-fatal */ }
+
     // Sync flagship theme + density stores with localStorage after hydration.
     // The pre-hydration inline script in app.html already set the DOM
     // attributes; these calls reconcile the Svelte store state so reactive
