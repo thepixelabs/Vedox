@@ -196,7 +196,7 @@
     height: 18px;
     padding: 0 var(--space-1);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--text-caption);
     font-weight: 600;
     color: var(--color-text-inverse);
     background-color: var(--color-accent);
