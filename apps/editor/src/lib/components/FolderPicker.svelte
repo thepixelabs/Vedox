@@ -9,7 +9,7 @@
    *   - "Select" button to choose the current path.
    */
 
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api, type BrowseResponse } from '$lib/api/client';
 
   interface Props {
@@ -23,7 +23,9 @@
 
   let { initialPath = '', onSelect, onCancel }: Props = $props();
 
-  let currentPath: string = $state(initialPath);
+  // untrack: initialPath is a one-time seed. The component navigates away from
+  // it immediately in onMount; prop changes after mount are not meaningful here.
+  let currentPath: string = $state(untrack(() => initialPath));
   let parentPath: string = $state('');
   let directories: Array<{ name: string; path: string }> = $state([]);
   let isLoading: boolean = $state(true);

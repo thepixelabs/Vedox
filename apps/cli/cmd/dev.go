@@ -16,6 +16,7 @@ import (
 	"github.com/vedox/vedox/internal/api"
 	"github.com/vedox/vedox/internal/config"
 	"github.com/vedox/vedox/internal/db"
+	"github.com/vedox/vedox/internal/docgraph"
 	"github.com/vedox/vedox/internal/gitcheck"
 	"github.com/vedox/vedox/internal/indexer"
 	"github.com/vedox/vedox/internal/links"
@@ -183,6 +184,11 @@ func buildDevMux(cfg *config.Config, docStore store.DocStore, dbStore *db.Store,
 	mux := http.NewServeMux()
 
 	apiServer := api.NewServer(docStore, dbStore, cfg.Workspace, jobStore, aiJobStore, registry, requireAgent)
+	// Wire the doc-reference GraphStore so /api/graph returns 200 instead of
+	// 503 in dev-server mode. Mirrors the daemon wiring in server.go.
+	if dbStore != nil {
+		apiServer.SetGraphStore(docgraph.NewGraphStore(dbStore))
+	}
 	apiServer.Mount(mux)
 
 	// Healthcheck endpoint. Used by process supervisors and the SvelteKit

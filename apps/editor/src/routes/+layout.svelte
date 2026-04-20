@@ -10,7 +10,7 @@
    * render to prevent a theme flash on page load).
    */
 
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import "../app.css";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import ToastContainer from "$lib/components/Toast/ToastContainer.svelte";
@@ -59,7 +59,9 @@
 
   // Seed the store from layout load data.
   // The load function already mapped API projects → store shape.
-  projectsStore.setProjects(data.projects);
+  // untrack: this is intentional one-time initialization. Re-seeding on prop
+  // changes is not desired — handleImported() does a full page reload instead.
+  projectsStore.setProjects(untrack(() => data.projects));
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   let unregisterShortcuts: (() => void)[] = [];
