@@ -76,10 +76,58 @@ func TestGetGraphForProject_SingleDocNoRefs(t *testing.T) {
 		t.Fatalf("expected 1 node 0 edges, got %d/%d", len(g.Nodes), len(g.Edges))
 	}
 	n := g.Nodes[0]
-	if n.ID != "p/a.md" || n.Project != "p" || n.Slug != "a" || n.Title != "Alpha" ||
+	// Slug is now derived from id by stripping the project prefix — no DB
+	// column required. For id="p/a.md" and project="p" the slug is "a.md".
+	if n.ID != "p/a.md" || n.Project != "p" || n.Slug != "a.md" || n.Title != "Alpha" ||
 		n.Type != "how-to" || n.Status != "published" ||
 		n.DegreeIn != 0 || n.DegreeOut != 0 {
 		t.Errorf("unexpected node: %+v", n)
+	}
+}
+
+// TestGetGraphForProject_SlugDerivedFromID verifies that the Slug field on
+// each GraphNode is derived from the doc's id by stripping the project prefix,
+// without reading the slug column from the database. This is the fix for
+// VDX-500: workspaces where migration 003 silently failed (leaving the slug
+// column absent) now return a correct slug rather than a query-time error.
+func TestGetGraphForProject_SlugDerivedFromID(t *testing.T) {
+	t.Parallel()
+	f := newGraphFixture(t)
+
+	// Seed docs at various nesting depths to exercise the prefix-strip logic.
+	// The slug values passed to seedDocIn are arbitrary (the schema requires
+	// them to be unique per project) — loadProjectDocs ignores the stored slug
+	// column entirely and derives Slug from the id. What we assert is the
+	// derived value that comes back via GetGraphForProject.
+	seedDocIn(t, f.store, "proj/top.md", "proj", "slug-top", "Top", "how-to", "published")
+	seedDocIn(t, f.store, "proj/docs/nested.md", "proj", "slug-nested", "Nested", "adr", "published")
+	seedDocIn(t, f.store, "proj/docs/adr/deep.md", "proj", "slug-deep", "Deep", "adr", "published")
+
+	g, err := f.graph.GetGraphForProject(f.ctx, "proj")
+	if err != nil {
+		t.Fatalf("GetGraphForProject: %v", err)
+	}
+	if len(g.Nodes) != 3 {
+		t.Fatalf("expected 3 nodes, got %d", len(g.Nodes))
+	}
+
+	slugByID := make(map[string]string, len(g.Nodes))
+	for _, n := range g.Nodes {
+		slugByID[n.ID] = n.Slug
+	}
+
+	cases := []struct {
+		id   string
+		want string
+	}{
+		{"proj/top.md", "top.md"},
+		{"proj/docs/nested.md", "docs/nested.md"},
+		{"proj/docs/adr/deep.md", "docs/adr/deep.md"},
+	}
+	for _, c := range cases {
+		if got := slugByID[c.id]; got != c.want {
+			t.Errorf("slug for %q: got %q, want %q", c.id, got, c.want)
+		}
 	}
 }
 
@@ -116,17 +164,21 @@ func TestGetGraphForProject_ResolvesPath(t *testing.T) {
 	}
 }
 
-// TestGetGraphForProject_ResolvesSlug: wikilink target resolves by slug
-// lookup within the project.
+// TestGetGraphForProject_ResolvesSlug: wikilink target resolves by file-basename
+// lookup within the project. The bySlug map is keyed on path.Base(id without
+// extension), so a wikilink "hmac-auth" resolves when a doc's id ends in
+// "/hmac-auth.md". This test uses ids whose basenames intentionally match the
+// wikilink targets so resolution succeeds without a DB slug column.
 func TestGetGraphForProject_ResolvesSlug(t *testing.T) {
 	t.Parallel()
 	f := newGraphFixture(t)
 
-	seedDocIn(t, f.store, "p/a.md", "p", "hmac-auth", "HMAC Auth", "adr", "published")
-	seedDocIn(t, f.store, "p/b.md", "p", "overview", "Overview", "how-to", "published")
+	// id basename "hmac-auth" matches wikilink target "hmac-auth".
+	seedDocIn(t, f.store, "p/hmac-auth.md", "p", "hmac-auth", "HMAC Auth", "adr", "published")
+	seedDocIn(t, f.store, "p/overview.md", "p", "overview", "Overview", "how-to", "published")
 
-	if err := f.graph.SaveRefs(f.ctx, "p/b.md", []docgraph.DocRef{{
-		SourcePath: "p/b.md",
+	if err := f.graph.SaveRefs(f.ctx, "p/overview.md", []docgraph.DocRef{{
+		SourcePath: "p/overview.md",
 		TargetPath: "hmac-auth",
 		LinkType:   docgraph.LinkTypeWikilink,
 	}}); err != nil {
@@ -141,7 +193,7 @@ func TestGetGraphForProject_ResolvesSlug(t *testing.T) {
 		t.Fatalf("edges=%d want 1", len(g.Edges))
 	}
 	e := g.Edges[0]
-	if e.Target != "p/a.md" || e.Kind != "wikilink" || e.Broken {
+	if e.Target != "p/hmac-auth.md" || e.Kind != "wikilink" || e.Broken {
 		t.Errorf("edge: %+v", e)
 	}
 }

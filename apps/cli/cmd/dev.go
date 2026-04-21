@@ -148,12 +148,40 @@ func runDev(cmd *cobra.Command, args []string) error {
 	slog.Info("agent key store loaded", "keys", len(keyStore.ListKeys()))
 	requireAgent := agentauth.RequireAgent(keyStore)
 
+	// 5c. Open the global database (~/.vedox/global.db) so analytics endpoints
+	// return 200 instead of 503. Failure is non-fatal — the server degrades
+	// gracefully (analytics returns 503) while all workspace-scoped endpoints
+	// remain functional. This mirrors the daemon wiring in server.go.
+	homeDir, homeDirErr := os.UserHomeDir()
+	var globalDB *db.GlobalDB
+	if homeDirErr != nil {
+		slog.Warn("could not resolve user home directory; analytics unavailable",
+			"error", homeDirErr,
+		)
+	} else {
+		globalDBPath := homeDir + "/" + db.GlobalDBPath
+		var globalDBErr error
+		globalDB, globalDBErr = db.OpenGlobalDB(globalDBPath)
+		if globalDBErr != nil {
+			slog.Warn("could not open global database; analytics unavailable",
+				"path", globalDBPath,
+				"error", globalDBErr,
+			)
+		} else {
+			defer func() {
+				if closeErr := globalDB.Close(); closeErr != nil {
+					slog.Error("failed to close global db", "error", closeErr.Error())
+				}
+			}()
+		}
+	}
+
 	// 6. Build the HTTP handler.
 	// SvelteKit Vite dev server runs on port 5151 and proxies /api/* to this
 	// Go server on port 5150. The Go server owns /api/*; SvelteKit owns everything else.
 	jobStore := scanner.NewJobStore()
 	aiJobStore := ai.NewJobStore(3)
-	mux := buildDevMux(cfg, adapter, dbStore, jobStore, aiJobStore, registry, requireAgent)
+	mux := buildDevMux(cfg, adapter, dbStore, globalDB, keyStore, jobStore, aiJobStore, registry, requireAgent)
 
 	srv := &http.Server{
 		Addr:         listenAddr,
@@ -180,7 +208,12 @@ func runDev(cmd *cobra.Command, args []string) error {
 //
 // SvelteKit Vite dev server proxies /api/* to this Go server on port 3001+1=3002
 // (or configurable offset). The Go server owns /api/*; SvelteKit owns everything else.
-func buildDevMux(cfg *config.Config, docStore store.DocStore, dbStore *db.Store, jobStore *scanner.JobStore, aiJobStore *ai.JobStore, registry *store.ProjectRegistry, requireAgent agentauth.Middleware) *http.ServeMux {
+//
+// globalDB may be nil when ~/.vedox/global.db could not be opened. In that
+// case analytics endpoints degrade to 503, matching the daemon's graceful
+// fallback. SetCollector and SetVoiceServer are intentionally omitted — those
+// subsystems require heavy setup not available in dev mode.
+func buildDevMux(cfg *config.Config, docStore store.DocStore, dbStore *db.Store, globalDB *db.GlobalDB, keyStore *agentauth.KeyStore, jobStore *scanner.JobStore, aiJobStore *ai.JobStore, registry *store.ProjectRegistry, requireAgent agentauth.Middleware) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	apiServer := api.NewServer(docStore, dbStore, cfg.Workspace, jobStore, aiJobStore, registry, requireAgent)
@@ -188,6 +221,19 @@ func buildDevMux(cfg *config.Config, docStore store.DocStore, dbStore *db.Store,
 	// 503 in dev-server mode. Mirrors the daemon wiring in server.go.
 	if dbStore != nil {
 		apiServer.SetGraphStore(docgraph.NewGraphStore(dbStore))
+	}
+	// Wire the global database so /api/analytics/summary returns 200 instead
+	// of 503 in dev-server mode. Mirrors the daemon wiring in server.go.
+	// globalDB is nil when the global database was unavailable at startup;
+	// the handler returns 503 gracefully in that case.
+	if globalDB != nil {
+		apiServer.SetGlobalDB(globalDB)
+	}
+	// Wire the agent key store so /api/agent/install and /api/agent/uninstall
+	// function in dev mode. keyStore is always non-nil here (runDev errors
+	// out if it fails to load), so this injection is unconditional.
+	if keyStore != nil {
+		apiServer.SetKeyStore(keyStore)
 	}
 	apiServer.Mount(mux)
 

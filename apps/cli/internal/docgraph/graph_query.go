@@ -178,9 +178,25 @@ func (g *GraphStore) GetGraphForProject(ctx context.Context, project string) (Gr
 // two lookup maps: id → *GraphNode (authoritative) and slug → *GraphNode
 // (wikilink resolution). The same node pointer is shared between both maps so
 // degree updates in attachDegrees are visible via either key.
+//
+// The slug column is intentionally NOT selected here. Migration 003 introduced
+// the slug column but on some workspaces that migration silently failed, leaving
+// the column absent and causing a query-time 500. Instead we derive the slug
+// from the doc id by stripping the project prefix:
+//
+//	id "altergo/docs/adr/001.md" with project "altergo" → slug "docs/adr/001.md"
+//
+// The frontend navigates to /projects/<project>/docs/<slug> using a [...path]
+// catch-all route, so multi-segment slugs work fine.
+//
+// For wikilink resolution we key bySlug on the file basename without extension
+// (e.g. "hmac-auth" for id "p/hmac-auth.md") because real-world wikilinks
+// point at short identifiers, not full paths. If no basename matches we fall
+// through to broken — which is correct and consistent with the missing-node
+// synthesis below.
 func (g *GraphStore) loadProjectDocs(ctx context.Context, project string) (map[string]*GraphNode, map[string]*GraphNode, error) {
 	rows, err := g.readDB.QueryContext(ctx,
-		`SELECT id, slug, COALESCE(title,''), COALESCE(type,''), COALESCE(status,''), mod_time
+		`SELECT id, COALESCE(title,''), COALESCE(type,''), COALESCE(status,''), mod_time
 		   FROM documents
 		  WHERE project = ?`,
 		project,
@@ -194,15 +210,23 @@ func (g *GraphStore) loadProjectDocs(ctx context.Context, project string) (map[s
 	bySlug := make(map[string]*GraphNode)
 	for rows.Next() {
 		n := &GraphNode{Project: project}
-		if err := rows.Scan(&n.ID, &n.Slug, &n.Title, &n.Type, &n.Status, &n.Modified); err != nil {
+		if err := rows.Scan(&n.ID, &n.Title, &n.Type, &n.Status, &n.Modified); err != nil {
 			return nil, nil, fmt.Errorf("scan document row: %w", err)
 		}
+		// Derive slug from id by stripping the "project/" prefix. For a doc
+		// whose id is "myproject/docs/adr/001.md" this yields "docs/adr/001.md",
+		// which the editor's catch-all route handles correctly.
+		n.Slug = strings.TrimPrefix(n.ID, project+"/")
+
 		byID[n.ID] = n
-		if n.Slug != "" {
-			// First-writer-wins on slug collisions — extremely rare, and the
-			// store enforces (project, slug) uniqueness at write time.
-			if _, dup := bySlug[n.Slug]; !dup {
-				bySlug[n.Slug] = n
+
+		// Key the wikilink resolution map on the file basename without extension
+		// (e.g. "hmac-auth" for "p/hmac-auth.md"). First-writer-wins on the
+		// unlikely event of two files with identical basenames in one project.
+		base := path.Base(strings.TrimSuffix(n.ID, ".md"))
+		if base != "" && base != "." {
+			if _, dup := bySlug[base]; !dup {
+				bySlug[base] = n
 			}
 		}
 	}
