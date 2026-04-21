@@ -168,7 +168,9 @@ func TestHandleGraph_WithRefs(t *testing.T) {
 	if !ok {
 		t.Fatal("missing node myproject/a.md")
 	}
-	if a.Project != "myproject" || a.Slug != "myproject/a.md" || a.Type != "how-to" ||
+	// Slug is derived from id by stripping the project prefix, not read from
+	// the DB slug column. id="myproject/a.md", project="myproject" → "a.md".
+	if a.Project != "myproject" || a.Slug != "a.md" || a.Type != "how-to" ||
 		a.Status != "published" {
 		t.Errorf("a.md fields: %+v", a)
 	}
