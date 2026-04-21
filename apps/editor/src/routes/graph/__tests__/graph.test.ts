@@ -3,46 +3,51 @@
  *
  * Route-level tests for /graph (+page.svelte).
  *
- * The graph page is a thin shell that:
- *   1. Renders a page header with the heading "reference graph"
- *   2. Renders the subtitle hint text
- *   3. Mounts the DocGraph component inside the canvas area
- *
- * DocGraph itself owns fetch / Cytoscape — we replace it with the shared
- * TabStub so the route tests focus on the page-shell contract.
+ * /graph is a project-picker landing page — the real graph canvas lives at
+ * /projects/[project]/graph. This page reads from the projects store and
+ * renders either a list of project links or a zero-state CTA.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
+import { projectsStore } from '$lib/stores/projects';
 
-// ---------------------------------------------------------------------------
-// Mocks — must be declared before the component import.
-// ---------------------------------------------------------------------------
-
-vi.mock('$lib/components/graph/DocGraph.svelte', () =>
-  import('../../../test-stubs/TabStub.svelte'),
-);
-
-// DocGraph imports goto from $app/navigation. Stub it to avoid module errors.
+// $app/navigation is imported transitively; stub to avoid module errors.
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 import GraphPage from '../+page.svelte';
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+describe('/graph picker', () => {
+  beforeEach(() => {
+    projectsStore.setProjects([]);
+  });
 
-describe('/graph page shell', () => {
-  it('should render the page title heading', () => {
+  it('renders the page title heading', () => {
     render(GraphPage);
 
     const heading = screen.getByRole('heading', { level: 1 });
     expect(heading).toHaveTextContent('reference graph');
   });
 
-  it('should render the user instruction subtitle', () => {
+  it('renders an empty-state CTA when no projects are registered', () => {
     render(GraphPage);
 
-    expect(screen.getByText(/click a node to open the doc/i)).toBeInTheDocument();
+    expect(screen.getByText(/no projects registered yet/i)).toBeInTheDocument();
+    const cta = screen.getByRole('link', { name: /register a project/i });
+    expect(cta).toHaveAttribute('href', '/onboarding');
+  });
+
+  it('lists every registered project and links each to its per-project graph', () => {
+    projectsStore.setProjects([
+      { id: 'alpha', name: 'alpha', docs: [], docCount: 12 },
+      { id: 'beta', name: 'beta', docs: [], docCount: 3 },
+    ]);
+    render(GraphPage);
+
+    const alphaLink = screen.getByRole('link', { name: /alpha/i });
+    expect(alphaLink).toHaveAttribute('href', '/projects/alpha/graph');
+
+    const betaLink = screen.getByRole('link', { name: /beta/i });
+    expect(betaLink).toHaveAttribute('href', '/projects/beta/graph');
   });
 });
