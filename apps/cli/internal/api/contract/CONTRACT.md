@@ -417,29 +417,60 @@ Error shape: every 4xx/5xx response is a JSON object:
 | Property    | Value |
 |-------------|-------|
 | Auth        | open  |
-| Description | Returns a Cytoscape-compatible {nodes, edges} graph of doc cross-references for the specified project. Read-only. |
+| Description | Returns the per-project doc-reference graph as a flat {nodes, edges, …} envelope consumed directly by the DocGraph frontend. Read-only. |
 
 **Query parameters**
 
 | Param   | Required | Description |
 |---------|----------|-------------|
-| project | yes      | Project name as returned by GET /api/projects |
+| project | yes      | Project name as returned by GET /api/projects. An unknown project returns 200 with an empty graph (matching /api/projects/{project}/docs). |
 
 **Response 200**
 
 ```json
 {
-  "nodes": [{ "data": { "id": "docs/adr/001.md", "label": "001" } }],
-  "edges": [{ "data": { "id": "src::tgt", "source": "src", "target": "tgt", "linkType": "md-link" } }]
+  "nodes": [
+    {
+      "id": "my-project/docs/adr/001.md",
+      "project": "my-project",
+      "slug": "adr-001",
+      "title": "ADR 001: Storage",
+      "type": "adr",
+      "status": "published",
+      "degree_in": 4,
+      "degree_out": 2,
+      "modified": "2026-04-20T14:02:11Z"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e:src->tgt#0",
+      "source": "my-project/docs/adr/001.md",
+      "target": "my-project/docs/adr/002.md",
+      "kind": "mdlink",
+      "broken": false
+    }
+  ],
+  "truncated": false,
+  "total_nodes": 142,
+  "total_edges": 389
 }
 ```
+
+Notes:
+
+- `kind` is one of `mdlink` | `wikilink` | `frontmatter` | `vedox_ref`. The backend normalises its internal LinkType enum (`md-link`, etc.) to these canonical values at the wire edge.
+- Broken edges (target does not resolve to an indexed doc) still appear, with `broken: true` and a synthesised target node carrying `type: "missing"`, `status: "broken"`. This keeps dangling links visible in the UI instead of silently dropping them.
+- Vedox-scheme edges (`vedox://file/...` source-code cross-links) are intentionally excluded in v1.
+- When `total_nodes` exceeds the server cap (default 2000) the response is capped and sorted by `degree_in + degree_out` DESC then `modified` DESC; `truncated` is `true`.
 
 **Error codes**
 
 | Status | Code    | Condition |
 |--------|---------|-----------|
-| 400    | VDX-400 | Missing project param |
+| 400    | VDX-400 | Missing `project` query parameter |
 | 503    | VDX-503 | GraphStore not available |
+| 500    | VDX-500 | Database read error |
 
 ---
 

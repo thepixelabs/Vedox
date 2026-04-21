@@ -80,6 +80,46 @@ export interface Task {
   updatedAt: string;
 }
 
+/**
+ * Graph types — the wire shape of GET /api/graph?project=<name>.
+ * The Go handler in apps/cli/internal/docgraph/graph_query.go is the
+ * authority; these interfaces must stay in 1:1 correspondence.
+ */
+export interface GraphNode {
+  /** Workspace-relative doc id, e.g. "myproject/docs/adr-001.md". */
+  id: string;
+  project: string;
+  slug: string;
+  title: string;
+  /** Doc type (adr | how-to | reference | runbook | tutorial | explanation | missing | …). */
+  type: string;
+  /** "draft" | "review" | "published" | "deprecated" | "broken" (synthesised missing targets). */
+  status: string;
+  degree_in: number;
+  degree_out: number;
+  /** RFC3339 timestamp; may be empty for synthesised missing-target nodes. */
+  modified: string;
+}
+
+export interface GraphEdge {
+  id: string;
+  /** Source doc id. */
+  source: string;
+  /** Target doc id (or a synthesised missing id when the edge is broken). */
+  target: string;
+  /** Canonical link kind: mdlink | wikilink | frontmatter | vedox_ref. */
+  kind: 'mdlink' | 'wikilink' | 'frontmatter' | 'vedox_ref';
+  broken: boolean;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  truncated: boolean;
+  total_nodes: number;
+  total_edges: number;
+}
+
 export interface SearchResult {
   /** FTS row id — also the workspace-relative doc path */
   id: string;
@@ -352,6 +392,16 @@ export const api = {
    */
   getProjectDocs(project: string): Promise<Doc[]> {
     return get<Doc[]>(`/api/projects/${encodeURIComponent(project)}/docs`);
+  },
+
+  /**
+   * GET /api/graph?project=<name>
+   * Returns the per-project doc reference graph. Unknown projects resolve
+   * to a 200 response with empty nodes/edges; missing `project` yields a
+   * 400 VDX-400 (caught as ApiError here).
+   */
+  getGraph(project: string): Promise<GraphData> {
+    return get<GraphData>(`/api/graph?project=${encodeURIComponent(project)}`);
   },
 
   /**

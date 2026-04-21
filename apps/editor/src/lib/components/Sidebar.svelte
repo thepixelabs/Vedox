@@ -102,6 +102,29 @@
         {#if currentProject}
           <div class="sidebar__section-label" aria-hidden="true">Documents</div>
           <DocTree project={currentProject} />
+
+          <!-- Per-project graph shortcut — visible only while browsing a project -->
+          <a
+            class="sidebar__project-graph-link"
+            class:sidebar__project-graph-link--active={$page.url.pathname ===
+              `/projects/${currentProject.id}/graph`}
+            href="/projects/{currentProject.id}/graph"
+            aria-label="Open {currentProject.name} reference graph"
+            aria-current={$page.url.pathname === `/projects/${currentProject.id}/graph`
+              ? 'page'
+              : undefined}
+          >
+            <span class="sidebar__project-graph-icon" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/>
+                <circle cx="6" cy="12" r="3"/>
+                <circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+            </span>
+            <span>graph</span>
+          </a>
         {:else}
           <div class="sidebar__section-label" aria-hidden="true">Projects</div>
           <nav aria-label="All projects">
@@ -361,6 +384,51 @@
   }
 
   .sidebar__project-icon {
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  /* Per-project graph shortcut — rendered under the DocTree, styled to sit
+     between tree and global-nav density. Matches the active-accent pattern
+     used by project links and global nav links. */
+  .sidebar__project-graph-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    margin: var(--space-2) var(--space-1) 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    border-top: 1px dashed var(--border-default);
+    padding-top: var(--space-3);
+    transition: background-color 80ms var(--ease-out), color 80ms var(--ease-out);
+  }
+
+  .sidebar__project-graph-link:hover {
+    background-color: var(--color-surface-overlay);
+    color: var(--color-text-primary);
+  }
+
+  .sidebar__project-graph-link:focus-visible {
+    outline: 2px solid var(--accent-solid);
+    outline-offset: -2px;
+  }
+
+  .sidebar__project-graph-link--active {
+    box-shadow: inset 2px 0 0 var(--accent-solid);
+    color: var(--text-1);
+  }
+
+  .sidebar__project-graph-link--active .sidebar__project-graph-icon {
+    color: var(--accent-solid);
+  }
+
+  .sidebar__project-graph-icon {
     color: var(--color-text-muted);
     display: flex;
     align-items: center;

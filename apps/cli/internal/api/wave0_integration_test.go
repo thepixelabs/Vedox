@@ -268,7 +268,7 @@ func TestWave0_GraphRouteWired(t *testing.T) {
 		t.Fatalf("/api/graph: status = %d, want 200 (body=%s)", resp.StatusCode, bodyStr(t, resp))
 	}
 
-	var body graphResponse
+	var body docgraph.Graph
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestWave0_GraphEndToEnd(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, bodyStr(t, resp))
 	}
 
-	var body graphResponse
+	var body docgraph.Graph
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

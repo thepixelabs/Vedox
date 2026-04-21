@@ -33,46 +33,28 @@
   import { onMount, onDestroy } from "svelte";
   import { goto } from "$app/navigation";
   import GraphControls from "./GraphControls.svelte";
+  import { api, ApiError, type GraphData, type GraphNode, type GraphEdge } from "$lib/api/client";
 
   // ---------------------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------------------
 
-  interface GraphNode {
-    id: string;
-    project: string;
-    slug: string;
-    title: string;
-    type: string;
-    status: string;
-    degree_in: number;
-    degree_out: number;
-    modified: string;
-  }
-
-  interface GraphEdge {
-    source: string;
-    target: string;
-    kind: "mdlink" | "wikilink" | "frontmatter" | "vedox_ref";
-    broken: boolean;
-  }
-
-  interface GraphData {
-    nodes: GraphNode[];
-    edges: GraphEdge[];
-    truncated: boolean;
-    total_nodes: number;
-    total_edges: number;
-  }
-
   interface Props {
-    /** Graph data. When null the component fetches from /api/graph. */
+    /**
+     * Pre-loaded graph data. When provided, the component renders it directly
+     * and skips any network call. Used by the project-scoped route which
+     * loads via +page.ts.
+     */
     data?: GraphData | null;
-    /** Override the API endpoint (defaults to /api/graph). */
-    apiEndpoint?: string;
+    /**
+     * Project name for self-fetching when `data` is absent. When neither
+     * `data` nor `project` is supplied, the component renders a
+     * "no project selected" state.
+     */
+    project?: string;
   }
 
-  let { data = null, apiEndpoint = "/api/graph" }: Props = $props();
+  let { data = null, project }: Props = $props();
 
   // ---------------------------------------------------------------------------
   // State
@@ -454,82 +436,34 @@
   // ---------------------------------------------------------------------------
 
   async function fetchGraph() {
-    const initialData = data;
-    if (initialData !== null) {
-      graphData = initialData;
+    // Prefer pre-loaded data from the parent route's +page.ts loader.
+    if (data) {
+      graphData = data;
       loadState = "done";
+      return;
+    }
+
+    // Self-fetch path: only works when a project is named. Without a
+    // project we have nothing meaningful to request — render the
+    // "no project selected" state below.
+    if (!project) {
+      loadState = "idle";
       return;
     }
 
     loadState = "loading";
     try {
-      const res = await fetch(apiEndpoint, {
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => res.statusText);
-        throw new Error(`${res.status} — ${text}`);
-      }
-      graphData = (await res.json()) as GraphData;
+      graphData = await api.getGraph(project);
       loadState = "done";
     } catch (err) {
-      // Show error state — do NOT silently fall back to mock data.
-      errorMessage = err instanceof Error ? err.message : "failed to load graph";
+      errorMessage =
+        err instanceof ApiError
+          ? `${err.code} — ${err.message}`
+          : err instanceof Error
+          ? err.message
+          : "failed to load graph";
       loadState = "error";
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Mock data (matches /api/graph response shape)
-  // ---------------------------------------------------------------------------
-
-  function buildMockData(): GraphData {
-    const nodes: GraphNode[] = [
-      { id: "pixelabs/adr/001-architecture.md",    project: "pixelabs", slug: "adr-001-architecture",    title: "ADR 001: monorepo",         type: "adr",         status: "published", degree_in: 4,  degree_out: 2, modified: "2026-03-10T10:00:00Z" },
-      { id: "pixelabs/adr/002-auth.md",             project: "pixelabs", slug: "adr-002-auth",             title: "ADR 002: HMAC auth",        type: "adr",         status: "published", degree_in: 6,  degree_out: 3, modified: "2026-03-12T10:00:00Z" },
-      { id: "pixelabs/adr/003-sqlite.md",           project: "pixelabs", slug: "adr-003-sqlite",           title: "ADR 003: SQLite + FTS5",    type: "adr",         status: "published", degree_in: 3,  degree_out: 1, modified: "2026-03-14T10:00:00Z" },
-      { id: "pixelabs/adr/004-daemon.md",           project: "pixelabs", slug: "adr-004-daemon",           title: "ADR 004: daemon mode",      type: "adr",         status: "published", degree_in: 12, degree_out: 3, modified: "2026-03-15T10:22:00Z" },
-      { id: "pixelabs/how-to/install.md",           project: "pixelabs", slug: "how-to-install",           title: "how to: install vedox",     type: "how-to",      status: "published", degree_in: 2,  degree_out: 4, modified: "2026-03-20T10:00:00Z" },
-      { id: "pixelabs/how-to/auth-setup.md",        project: "pixelabs", slug: "how-to-auth",              title: "how to: set up auth",       type: "how-to",      status: "published", degree_in: 3,  degree_out: 2, modified: "2026-03-22T10:00:00Z" },
-      { id: "pixelabs/tutorial/quickstart.md",      project: "pixelabs", slug: "tutorial-quickstart",      title: "quickstart",                type: "tutorial",    status: "published", degree_in: 8,  degree_out: 5, modified: "2026-03-25T10:00:00Z" },
-      { id: "pixelabs/reference/api.md",            project: "pixelabs", slug: "reference-api",            title: "API reference",             type: "reference",   status: "published", degree_in: 5,  degree_out: 0, modified: "2026-03-28T10:00:00Z" },
-      { id: "pixelabs/reference/config.md",         project: "pixelabs", slug: "reference-config",         title: "config reference",          type: "reference",   status: "published", degree_in: 4,  degree_out: 1, modified: "2026-04-01T10:00:00Z" },
-      { id: "pixelabs/runbooks/restart-daemon.md",  project: "pixelabs", slug: "runbook-restart-daemon",   title: "restart the daemon",        type: "runbook",     status: "published", degree_in: 2,  degree_out: 3, modified: "2026-04-05T10:00:00Z" },
-      { id: "pixelabs/runbooks/debug-auth.md",      project: "pixelabs", slug: "runbook-debug-auth",       title: "debug auth failures",       type: "runbook",     status: "draft",     degree_in: 1,  degree_out: 2, modified: "2026-04-08T10:00:00Z" },
-      { id: "pixelabs/explanation/graph-design.md", project: "pixelabs", slug: "explanation-graph-design", title: "how the graph works",       type: "explanation", status: "published", degree_in: 3,  degree_out: 4, modified: "2026-04-10T10:00:00Z" },
-      { id: "pixelabs/explanation/security.md",     project: "pixelabs", slug: "explanation-security",     title: "security model",            type: "explanation", status: "published", degree_in: 5,  degree_out: 2, modified: "2026-04-12T10:00:00Z" },
-    ];
-
-    const edges: GraphEdge[] = [
-      { source: "pixelabs/tutorial/quickstart.md",      target: "pixelabs/how-to/install.md",           kind: "mdlink",      broken: false },
-      { source: "pixelabs/tutorial/quickstart.md",      target: "pixelabs/reference/config.md",         kind: "mdlink",      broken: false },
-      { source: "pixelabs/tutorial/quickstart.md",      target: "pixelabs/adr/001-architecture.md",     kind: "wikilink",    broken: false },
-      { source: "pixelabs/how-to/install.md",           target: "pixelabs/reference/api.md",            kind: "mdlink",      broken: false },
-      { source: "pixelabs/how-to/install.md",           target: "pixelabs/adr/004-daemon.md",           kind: "frontmatter", broken: false },
-      { source: "pixelabs/how-to/auth-setup.md",        target: "pixelabs/adr/002-auth.md",             kind: "mdlink",      broken: false },
-      { source: "pixelabs/how-to/auth-setup.md",        target: "pixelabs/reference/api.md",            kind: "wikilink",    broken: false },
-      { source: "pixelabs/adr/004-daemon.md",           target: "pixelabs/runbooks/restart-daemon.md",  kind: "mdlink",      broken: false },
-      { source: "pixelabs/adr/004-daemon.md",           target: "pixelabs/adr/001-architecture.md",     kind: "frontmatter", broken: false },
-      { source: "pixelabs/adr/002-auth.md",             target: "pixelabs/explanation/security.md",     kind: "mdlink",      broken: false },
-      { source: "pixelabs/adr/002-auth.md",             target: "pixelabs/reference/api.md",            kind: "mdlink",      broken: false },
-      { source: "pixelabs/adr/003-sqlite.md",           target: "pixelabs/adr/001-architecture.md",     kind: "frontmatter", broken: false },
-      { source: "pixelabs/runbooks/restart-daemon.md",  target: "pixelabs/adr/004-daemon.md",           kind: "wikilink",    broken: false },
-      { source: "pixelabs/runbooks/restart-daemon.md",  target: "pixelabs/reference/config.md",         kind: "mdlink",      broken: false },
-      { source: "pixelabs/runbooks/debug-auth.md",      target: "pixelabs/how-to/auth-setup.md",        kind: "mdlink",      broken: false },
-      { source: "pixelabs/runbooks/debug-auth.md",      target: "pixelabs/explanation/security.md",     kind: "wikilink",    broken: false },
-      { source: "pixelabs/explanation/graph-design.md", target: "pixelabs/adr/003-sqlite.md",           kind: "vedox_ref",   broken: false },
-      { source: "pixelabs/explanation/graph-design.md", target: "pixelabs/reference/api.md",            kind: "mdlink",      broken: false },
-      { source: "pixelabs/explanation/security.md",     target: "pixelabs/adr/002-auth.md",             kind: "frontmatter", broken: false },
-      { source: "pixelabs/tutorial/quickstart.md",      target: "pixelabs/missing-doc.md",              kind: "mdlink",      broken: true  },
-    ];
-
-    return {
-      nodes,
-      edges,
-      truncated: false,
-      total_nodes: nodes.length,
-      total_edges: edges.length,
-    };
   }
 
   // ---------------------------------------------------------------------------
@@ -647,7 +581,7 @@
         </button>
       </div>
     {:else if loadState === "done" && nodeCount === 0}
-      <!-- Empty state -->
+      <!-- Empty state — distinguish "no docs at all" from "filters hide everything" -->
       <div class="doc-graph__state-overlay" role="status">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="doc-graph__state-icon" aria-hidden="true">
           <circle cx="18" cy="5" r="3"/>
@@ -656,7 +590,11 @@
           <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
           <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
         </svg>
-        <span class="doc-graph__state-label">no docs match these filters</span>
+        <span class="doc-graph__state-label">
+          {graphData && graphData.total_nodes === 0
+            ? "no docs with links yet in this project"
+            : "no docs match these filters"}
+        </span>
         <button
           class="doc-graph__retry-btn"
           type="button"
