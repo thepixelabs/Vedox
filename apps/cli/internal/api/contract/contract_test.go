@@ -941,18 +941,18 @@ func TestContract_Graph(t *testing.T) {
 		f.assertWrongMethod(t, "/api/graph", http.MethodPost)
 	})
 
-	t.Run("empty_project_aggregates_across_projects", func(t *testing.T) {
-		// Empty project param aggregates across all registered projects.
-		// Fixture has no GraphStore, so this surfaces as 503 (same as
-		// the single-project path below), not 400.
+	t.Run("missing_project_returns_400", func(t *testing.T) {
+		// /api/graph is per-project only. Omitting ?project= is a client
+		// error (VDX-400), not a 503 or an implicit aggregation.
 		w := f.get(t, "/api/graph", nil)
-		if w.Code == http.StatusBadRequest {
-			t.Errorf("GET /api/graph without project param must aggregate, not 400")
-		}
+		assertStatus(t, w, http.StatusBadRequest)
+		hasKeys(t, w, "code", "message")
 	})
 
 	t.Run("no_graph_store_returns_503", func(t *testing.T) {
-		// Fixture does not inject a GraphStore → handler returns 503.
+		// Fixture does not inject a GraphStore → handler returns 503
+		// when ?project= is present (missing param short-circuits to 400
+		// before the store check, so we must supply one here).
 		w := f.get(t, "/api/graph?project=x", nil)
 		assertStatus(t, w, http.StatusServiceUnavailable)
 	})
