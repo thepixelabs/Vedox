@@ -1,6 +1,7 @@
 {
   "name": "@vedox/templates",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "description": "Vedox launch templates and frontmatter validation schemas",
   "type": "module",
   "main": "./dist/index.js",

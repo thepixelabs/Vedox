@@ -7,7 +7,7 @@
 <p align="center"><em>the documentation operating system for solo devs</em></p>
 
 <p align="center">
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license" /></a>
+  <a href="https://polyformproject.org/licenses/shield/1.0.0"><img src="https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-blue?style=flat-square" alt="PolyForm Shield 1.0.0 license" /></a>
   <a href="https://github.com/thepixelabs/vedox/actions"><img src="https://img.shields.io/github/actions/workflow/status/thepixelabs/vedox/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
 </p>
 
@@ -106,9 +106,13 @@ before writing any documentation, read [docs/WRITING_FRAMEWORK.md](docs/WRITING_
 
 ---
 
-## license
+## License
 
-MIT. see [LICENSE](LICENSE).
+This project is fair-code distributed under the **PolyForm Shield 1.0.0 License**.
+
+You may use, modify, and distribute this software for personal and internal business operations. Commercial use is permitted, provided it does not directly compete with the primary product or services offered by the repository owner.
+
+Please refer to the [`LICENSE`](LICENSE) file for the complete terms and conditions.
 
 ---
 

@@ -345,7 +345,7 @@ brews:
     # Formula metadata.
     homepage: "https://vedox.dev"
     description: "Local-first, Git-native documentation operating system for solo developers"
-    license: "MIT"
+    license: "LicenseRef-PolyForm-Shield-1.0.0"
 
     # Skip during snapshot builds (goreleaser --snapshot / local dry-run).
     skip_upload: auto
