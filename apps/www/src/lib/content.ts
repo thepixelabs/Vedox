@@ -37,7 +37,7 @@ export const hero = {
 	primaryCta: { label: 'Copy install command', command: site.installCommand },
 	secondaryCta: { label: 'View on GitHub', href: site.github },
 	trustLine:
-		'open source. PolyForm Shield 1.0.0 licensed. zero telemetry. zero outbound network calls. your words stay on your machine until you decide otherwise.',
+		'source-available. PolyForm Shield licensed. zero telemetry. zero outbound network calls. your words stay on your machine until you decide otherwise.',
 } as const;
 
 export const pitch = {
@@ -71,8 +71,8 @@ export const pillars = {
 		},
 		{
 			icon: 'lock',
-			title: 'open source. no asterisks.',
-			body: 'PolyForm Shield 1.0.0 licensed. read the code, fork the code, change the code. no "community edition" with the good parts removed. no telemetry. no data collection. the entire tool is yours to audit, modify, and self-host forever.',
+			title: 'fair-code. no asterisks.',
+			body: 'PolyForm Shield licensed. read the code, fork the code, change the code. no "community edition" with the good parts removed. no telemetry. no data collection. the entire tool is yours to audit, modify, and self-host forever.',
 		},
 	],
 } as const;
@@ -304,7 +304,7 @@ export const comparison = {
 			values: [true, true, true, false, false, true],
 		},
 		{
-			feature: 'Free and open source (PolyForm Shield 1.0.0)',
+			feature: 'Free and source-available (PolyForm Shield)',
 			values: [true, false, false, false, false, true],
 		},
 		{
@@ -372,7 +372,7 @@ export const faq = {
 		},
 		{
 			q: 'What does it cost?',
-			a: 'Nothing. PolyForm Shield 1.0.0 licensed, free forever. No paid tier, no "pro" features behind a paywall. Pixelabs builds tools and releases them. This is one of them.',
+			a: 'Nothing. PolyForm Shield licensed, free forever. No paid tier, no "pro" features behind a paywall. Pixelabs builds tools and releases them. This is one of them.',
 		},
 		{
 			q: 'Does Vedox phone home?',
@@ -441,7 +441,7 @@ export const socialProof = {
 } as const;
 
 export const footer = {
-	copy: `\u00a9 ${new Date().getFullYear()} Pixelabs. PolyForm Shield 1.0.0 licensed.`,
+	copy: `\u00a9 ${new Date().getFullYear()} Pixelabs. PolyForm Shield licensed.`,
 	links: [
 		{ label: 'GitHub', href: site.github },
 		{ label: 'License', href: `${site.github}/blob/main/LICENSE` },
@@ -459,7 +459,7 @@ export const seo = {
 		'markdown CMS for developers',
 		'self-hosted docs editor',
 		'git-native docs',
-		'open source documentation CMS',
+		'source-available documentation CMS',
 		'WYSIWYG markdown editor',
 	],
 } as const;

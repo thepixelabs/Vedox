@@ -106,9 +106,13 @@ before writing any documentation, read [docs/WRITING_FRAMEWORK.md](docs/WRITING_
 
 ---
 
-## license
+## License
 
-PolyForm Shield 1.0.0. see [LICENSE](LICENSE).
+This project is fair-code distributed under the **PolyForm Shield 1.0.0 License**.
+
+You may use, modify, and distribute this software for personal and internal business operations. Commercial use is permitted, provided it does not directly compete with the primary product or services offered by the repository owner.
+
+Please refer to the [`LICENSE`](LICENSE) file for the complete terms and conditions.
 
 ---
 

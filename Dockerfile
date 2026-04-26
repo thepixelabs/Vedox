@@ -32,7 +32,7 @@ LABEL org.opencontainers.image.title="vedox" \
       org.opencontainers.image.url="https://vedox.dev" \
       org.opencontainers.image.source="https://github.com/thepixelabs/Vedox" \
       org.opencontainers.image.vendor="Pixelabs" \
-      org.opencontainers.image.licenses="PolyForm Shield 1.0.0"
+      org.opencontainers.image.licenses="LicenseRef-PolyForm-Shield-1.0.0"
 
 # Goreleaser stages the binary into the build context as `vedox` (the project
 # name from the builds.binary template).
