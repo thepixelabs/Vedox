@@ -13,7 +13,7 @@ prerequisites: []
 
 # Keyboard Shortcuts
 
-Complete reference of keyboard shortcuts in Vedox. On Mac, `Cmd` is the modifier. On Windows and Linux, substitute `Ctrl` for `Cmd`.
+Complete reference of keyboard shortcuts in Vedox. On macOS, `Cmd` is the modifier. On Linux, substitute `Ctrl` for `Cmd`.
 
 Source: `apps/editor/src/lib/data/shortcuts-data.ts`
 

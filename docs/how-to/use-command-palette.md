@@ -23,7 +23,7 @@ This guide covers the four modes of the Vedox command palette, the prefixes that
 
 ## Steps
 
-1. **Open the palette.** Press `Cmd+K` (or `Ctrl+K` on Windows and Linux). The palette opens centered on screen with the cursor in the input.
+1. **Open the palette.** Press `Cmd+K` on macOS or `Ctrl+K` on Linux. The palette opens centered on screen with the cursor in the input.
 
 2. **Choose a mode by prefix.** The first character of the query selects one of four modes:
 

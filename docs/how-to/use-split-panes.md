@@ -24,7 +24,7 @@ This guide covers how to open, populate, resize, and close split panes in the Ve
 
 ## Steps
 
-1. **Open an empty split.** Press `Cmd+\` (or `Ctrl+\` on Windows and Linux). A new empty pane appears to the right of the active pane and becomes the active target.
+1. **Open an empty split.** Press `Cmd+\` on macOS or `Ctrl+\` on Linux. A new empty pane appears to the right of the active pane and becomes the active target.
 
 2. **Fill the empty split.** The empty pane shows a picker. Click any document in the sidebar — because the active pane has no doc, the click fills it in place rather than replacing the doc in a different pane.
 
