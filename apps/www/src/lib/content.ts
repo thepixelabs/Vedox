@@ -222,7 +222,7 @@ export const features = {
 			items: [
 				{
 					title: 'Single binary',
-					body: 'one `npm install -g vedox`. no runtime dependencies, no Docker, no daemon.',
+					body: 'one `brew install thepixelabs/tap/vedox`. no runtime dependencies, no Docker, no daemon.',
 				},
 				{
 					title: 'Zero config start',

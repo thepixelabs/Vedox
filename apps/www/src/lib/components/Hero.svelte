@@ -274,7 +274,7 @@
                     <span class="mock-code-lang">shell</span>
                     <button class="mock-code-copy">copy</button>
                   </div>
-                  <pre class="mock-pre"><span class="mock-kw">$</span> npm install -g vedox
+                  <pre class="mock-pre"><span class="mock-kw">$</span> brew install thepixelabs/tap/vedox
 <span class="mock-kw">$</span> vedox dev</pre>
                 </div>
 
