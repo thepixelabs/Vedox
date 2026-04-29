@@ -347,8 +347,12 @@ brews:
     description: "Local-first, Git-native documentation operating system for solo developers"
     license: "LicenseRef-PolyForm-Shield-1.0.0"
 
-    # Skip during snapshot builds (goreleaser --snapshot / local dry-run).
-    skip_upload: auto
+    # `auto` would skip prereleases (semver -alpha/-beta/-rc) — which means
+    # alpha tags wouldn't update the tap, leaving `brew install` broken until
+    # a non-prerelease ships. We want every published tag (including alphas)
+    # to bump the formula. Snapshots are filtered out separately by goreleaser
+    # via `--snapshot` regardless of this flag.
+    skip_upload: false
 
     # Commit message for the version-bump PR.
     # The accept-bump.yml workflow in the tap repo matches PRs whose branch
