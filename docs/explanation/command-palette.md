@@ -10,7 +10,7 @@ author: "tech-writer"
 
 # Command Palette
 
-The command palette is a modal search and command interface opened with `Cmd+K` (Mac) or `Ctrl+K` (Windows/Linux). It provides four modes for finding documents, running commands, filtering by tag, and jumping to file paths.
+The command palette is a modal search and command interface opened with `Cmd+K` (macOS) or `Ctrl+K` (Linux). It provides four modes for finding documents, running commands, filtering by tag, and jumping to file paths.
 
 Source: `apps/editor/src/lib/components/CommandPalette/store.ts`
 

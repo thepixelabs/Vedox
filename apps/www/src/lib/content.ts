@@ -15,7 +15,7 @@ export const site = {
 	description:
 		'Vedox is a local-first documentation CMS for developers. Markdown in, Git history out. No server, no account, no telemetry.',
 	github: 'https://github.com/thepixelabs/vedox',
-	installCommand: 'npm install -g vedox',
+	installCommand: 'brew install thepixelabs/tap/vedox',
 	runCommand: 'vedox dev',
 } as const;
 
@@ -413,16 +413,9 @@ export const roadmap = {
 
 export const waitlist = {
 	id: 'waitlist',
-	kicker: './waitlist',
-	title: 'be the first to install on launch day.',
-	body: 'One email, launch-day only. No newsletter, no drip, no sales sequence. Unsubscribe is a single click and we delete the address.',
-	placeholder: 'you@yourdomain.dev',
-	button: './install',
-	sending: 'sending',
-	success: 'Got it. We\u2019ll email once when Vedox is ready to install.',
-	failure: 'Something went wrong. Try again or open an issue on GitHub.',
-	disabled:
-		'Waitlist endpoint not configured yet. Star the repo on GitHub and you\u2019ll see the launch there too.',
+	kicker: './install',
+	title: 'install vedox in one command.',
+	body: 'one binary, zero runtime dependencies. no account, no telemetry, no install-time signup. point it at a folder and it starts indexing.',
 } as const;
 
 export const midCta = {
@@ -470,7 +463,7 @@ export const jsonLd = {
 	name: 'Vedox',
 	description: site.description,
 	applicationCategory: 'DeveloperApplication',
-	operatingSystem: 'macOS, Linux, Windows',
+	operatingSystem: 'macOS, Linux',
 	offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
 	url: site.url,
 	license: 'https://polyformproject.org/licenses/shield/1.0.0',
